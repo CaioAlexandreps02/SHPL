@@ -96,7 +96,9 @@ export function SHPLPlayersPageV2({ snapshot }: { snapshot: LeagueSnapshot }) {
       return;
     }
 
-    setPlayers((currentPlayers) => [...currentPlayers, payload.player]);
+    const createdPlayer = payload.player;
+
+    setPlayers((currentPlayers) => [...currentPlayers, createdPlayer]);
     setNewPlayerName("");
     setIsAdding(false);
     setMessage("Participante adicionado com sucesso.");

@@ -114,6 +114,10 @@ export function UserProfileFab() {
         throw new Error("error" in data && data.error ? data.error : "Nao foi possivel salvar.");
       }
 
+      if (!("success" in data) || !data.success) {
+        throw new Error("Resposta inesperada ao salvar o perfil.");
+      }
+
       const nextProfile: ProfilePayload = {
         fullName: data.fullName,
         email: data.email,

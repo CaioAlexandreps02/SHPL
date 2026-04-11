@@ -58,3 +58,4 @@ export async function getCurrentUserAccess() {
   return resolveUserAccessByEmail(session.email);
 }
 export { canManageTable, hasAnyRole, isAdmin };
+export type { AccessRole } from "@/lib/auth/roles";

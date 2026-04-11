@@ -444,15 +444,18 @@ function buildMatchRanking(pointsByPlayer: Record<string, number>) {
 }
 
 function buildFinalStageRankingFromMatches(
-  matches: StageMatchPoints[number]["matches"]
+  matches: StageMatchPoints["matches"]
 ) {
-  const totalsByPlayer = matches.reduce<Record<string, number>>((totals, match) => {
+  const totalsByPlayer = matches.reduce<Record<string, number>>(
+    (totals: Record<string, number>, match: StageMatchPoints["matches"][number]) => {
     for (const player of players) {
       totals[player.id] = (totals[player.id] ?? 0) + (match.pointsByPlayer[player.id] ?? 0);
     }
 
     return totals;
-  }, {});
+    },
+    {}
+  );
 
   return players
     .map((player) => ({

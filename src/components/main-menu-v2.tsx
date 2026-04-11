@@ -3,7 +3,14 @@ import Link from "next/link";
 
 import { UserProfileFab } from "@/components/user-profile-fab";
 
-const menuItems = [
+type MainMenuItem = {
+  href: string;
+  label: string;
+  imageSrc?: string;
+  imageAlt?: string;
+};
+
+const menuItems: MainMenuItem[] = [
   {
     href: "/shpl-2026",
     label: "SHPL 2026",

@@ -107,7 +107,9 @@ export async function getDemoLeagueSnapshot(): Promise<LeagueSnapshot> {
     getStoredStages(),
   ]);
 
-  const playerNameById = new Map(storedPlayers.map((player) => [player.id, player.name]));
+  const playerNameById = new Map(
+    storedPlayers.map((player) => [player.id, player.fullName || player.nickname]),
+  );
   const annualRanking = buildAnnualRankingFromStore(store.annualRankingStats, playerNameById);
   const annualStagePoints = store.annualStagePoints.map((stage) =>
     injectZeroPointsForPlayers(stage, storedPlayers.map((player) => player.id))
@@ -206,7 +208,9 @@ export async function finalizeStoredStage(input: FinalizeStoredStageInput) {
     throw new Error("Essa etapa ja foi encerrada anteriormente.");
   }
 
-  const playerNameById = new Map(storedPlayers.map((player) => [player.id, player.name]));
+  const playerNameById = new Map(
+    storedPlayers.map((player) => [player.id, player.fullName || player.nickname]),
+  );
   const knownPlayerIds = storedPlayers.map((player) => player.id);
   const matchCount = Math.max(
     input.completedMatchDurations.length,

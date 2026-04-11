@@ -1261,7 +1261,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
           throw new Error("error" in data && data.error ? data.error : "Falha ao transcrever.");
         }
 
-        handleTranscriptCommand(data.text ?? "", "whisper");
+        handleTranscriptCommand(("text" in data ? data.text : "") ?? "", "whisper");
       } catch (loopError) {
         setTranscriptError(
           loopError instanceof Error
