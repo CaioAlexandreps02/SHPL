@@ -1,0 +1,21 @@
+# Local-only assets for the live-lab experiments.
+# These files stay on this machine for testing/training,
+# but should not be committed to GitHub.
+
+# OpenCV temporary install
+opencv-temp/node_modules/
+
+# Training outputs and prepared datasets
+training/models/
+training/prepared/
+
+# Local audio/transcription samples
+sample.wav
+silence.wav
+silence-result.json
+
+# Whisper local binaries and downloaded models
+whisper.cpp/models/
+whisper.cpp/Release/
+whisper.cpp/Win32/
+whisper.cpp/*.zip

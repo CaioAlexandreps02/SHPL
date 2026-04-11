@@ -1,0 +1,129 @@
+{
+  "players": [
+    {
+      "id": "p2",
+      "name": "Alisson",
+      "active": true,
+      "birthDate": "",
+      "status": "Ativo",
+      "role": "Jogador",
+      "email": "",
+      "extraRoles": [
+        "Dealer"
+      ],
+      "fullName": "Alisson",
+      "nickname": "Alisson"
+    },
+    {
+      "id": "p1",
+      "name": "Caio Alexandre Porto da Silva",
+      "status": "Ativo",
+      "birthDate": "2002-10-24",
+      "email": "caioporto100@gmail.com",
+      "extraRoles": [
+        "Administrador"
+      ],
+      "active": true,
+      "fullName": "Caio Alexandre Porto da Silva",
+      "nickname": "Caio"
+    },
+    {
+      "id": "p3",
+      "name": "Thomas",
+      "active": true,
+      "birthDate": "",
+      "status": "Ativo",
+      "role": "Jogador",
+      "email": "",
+      "extraRoles": [],
+      "fullName": "Thomas",
+      "nickname": "Thomas"
+    },
+    {
+      "id": "p4",
+      "name": "Tuba",
+      "active": true,
+      "birthDate": "",
+      "status": "Ativo",
+      "role": "Jogador",
+      "email": "",
+      "extraRoles": [],
+      "fullName": "Tuba",
+      "nickname": "Tuba"
+    },
+    {
+      "id": "p5",
+      "name": "Thiago",
+      "active": true,
+      "birthDate": "",
+      "status": "Ativo",
+      "role": "Jogador",
+      "email": "",
+      "extraRoles": [],
+      "fullName": "Thiago",
+      "nickname": "Thiago"
+    },
+    {
+      "id": "p6",
+      "name": "Davi",
+      "active": true,
+      "birthDate": "",
+      "status": "Ativo",
+      "role": "Jogador",
+      "email": "",
+      "extraRoles": [],
+      "fullName": "Davi",
+      "nickname": "Davi"
+    },
+    {
+      "id": "p7",
+      "name": "Juan",
+      "active": true,
+      "birthDate": "",
+      "status": "Ativo",
+      "role": "Jogador",
+      "email": "",
+      "extraRoles": [],
+      "fullName": "Juan",
+      "nickname": "Juan"
+    }
+  ],
+  "stages": [
+    {
+      "id": "stage-01",
+      "title": "Etapa 01",
+      "stageDate": "2026-01-07",
+      "status": "finished"
+    },
+    {
+      "id": "stage-02",
+      "title": "Etapa 02",
+      "stageDate": "2026-02-04",
+      "status": "finished"
+    },
+    {
+      "id": "stage-03",
+      "title": "Etapa 03",
+      "stageDate": "2026-03-10",
+      "status": "finished"
+    },
+    {
+      "id": "stage-04",
+      "title": "Etapa 04",
+      "stageDate": "2026-07-15",
+      "status": "scheduled"
+    },
+    {
+      "id": "stage-05",
+      "title": "Etapa 05",
+      "stageDate": "2026-08-19",
+      "status": "scheduled"
+    },
+    {
+      "id": "stage-06",
+      "title": "Etapa 06",
+      "stageDate": "2026-09-16",
+      "status": "scheduled"
+    }
+  ]
+}

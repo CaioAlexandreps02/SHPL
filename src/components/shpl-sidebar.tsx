@@ -1,0 +1,78 @@
+"use client";
+
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+
+import { canManageTable, type AccessRole } from "@/lib/auth/roles";
+
+const navItems = [
+  { href: "/shpl-2026/dashboard", label: "Dashboard", icon: "D", access: "all" as const },
+  { href: "/shpl-2026/jogadores", label: "Participantes", icon: "P", access: "admin" as const },
+  { href: "/shpl-2026/ranking", label: "Ranking", icon: "R", access: "all" as const },
+  { href: "/shpl-2026/etapas", label: "Etapas", icon: "E", access: "all" as const },
+  { href: "/shpl-2026/transmissao", label: "Transmissao", icon: "T", access: "table" as const },
+  { href: "/shpl-2026/historico", label: "Historico", icon: "H", access: "admin" as const },
+  { href: "/shpl-2026/estatisticas", label: "Estatisticas", icon: "S", access: "all" as const },
+  { href: "/shpl-2026/configuracoes", label: "Configuracoes", icon: "C", access: "admin" as const },
+];
+
+export function SHPLSidebar({ roles }: { roles: AccessRole[] }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const access = { roles };
+  const isAdmin = roles.includes("Administrador");
+  const visibleNavItems = navItems.filter((item) =>
+    item.access === "all" ? true : item.access === "admin" ? isAdmin : canManageTable(access)
+  );
+
+  function handleBackToMenu() {
+    router.push("/menu");
+    router.refresh();
+  }
+
+  return (
+    <aside className="w-full rounded-[2rem] border border-[rgba(255,208,101,0.18)] bg-[linear-gradient(180deg,rgba(7,27,19,0.96),rgba(5,19,14,0.98))] p-4 shadow-[0_20px_45px_rgba(0,0,0,0.32)] xl:sticky xl:top-6 xl:w-[255px] xl:self-start">
+      <div className="px-2 py-3">
+        <Image
+          alt="Logo oficial da SHPL"
+          className="mx-auto h-auto w-[122px]"
+          height={122}
+          priority
+          src="/shpl-logo.png"
+          width={122}
+        />
+      </div>
+
+      <nav className="mt-4 grid gap-2">
+        {visibleNavItems.map((item) => (
+          <Link
+            key={item.href}
+            className={`flex items-center gap-3 rounded-[1.1rem] border px-4 py-3 text-sm font-semibold transition ${
+              pathname === item.href
+                ? "border-[rgba(255,208,101,0.52)] bg-[linear-gradient(180deg,rgba(255,187,39,0.12),rgba(255,187,39,0.04))] text-[rgba(255,236,184,0.98)] shadow-[0_0_0_1px_rgba(255,208,101,0.08)]"
+                : "border-transparent bg-white/[0.03] text-[rgba(248,242,225,0.88)] hover:border-[rgba(255,208,101,0.22)] hover:bg-white/[0.06]"
+            }`}
+            href={item.href}
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(255,191,39,0.14)] text-[rgba(255,220,143,0.98)]">
+              {item.icon}
+            </span>
+            <span>{item.label}</span>
+          </Link>
+        ))}
+      </nav>
+
+      <button
+        className="mt-5 flex w-full items-center justify-center gap-3 rounded-[1.1rem] border border-[rgba(255,208,101,0.18)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm font-semibold text-[rgba(248,242,225,0.88)] transition hover:border-[rgba(255,208,101,0.3)] hover:bg-white/[0.06]"
+        onClick={handleBackToMenu}
+        type="button"
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(255,191,39,0.14)] text-[rgba(255,220,143,0.98)]">
+          S
+        </span>
+        <span>Sair</span>
+      </button>
+    </aside>
+  );
+}

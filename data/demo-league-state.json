@@ -1,0 +1,1531 @@
+{
+    "annualRankingStats":  [
+                               {
+                                   "playerId":  "p2",
+                                   "points":  34,
+                                   "wins":  2,
+                                   "secondPlaces":  2,
+                                   "thirdPlaces":  0
+                               },
+                               {
+                                   "playerId":  "p1",
+                                   "points":  30,
+                                   "wins":  2,
+                                   "secondPlaces":  2,
+                                   "thirdPlaces":  0
+                               },
+                               {
+                                   "playerId":  "p3",
+                                   "points":  22,
+                                   "wins":  1,
+                                   "secondPlaces":  1,
+                                   "thirdPlaces":  2
+                               },
+                               {
+                                   "playerId":  "p4",
+                                   "points":  13,
+                                   "wins":  0,
+                                   "secondPlaces":  1,
+                                   "thirdPlaces":  1
+                               },
+                               {
+                                   "playerId":  "p6",
+                                   "points":  6,
+                                   "wins":  0,
+                                   "secondPlaces":  0,
+                                   "thirdPlaces":  0
+                               },
+                               {
+                                   "playerId":  "p5",
+                                   "points":  3,
+                                   "wins":  0,
+                                   "secondPlaces":  0,
+                                   "thirdPlaces":  0
+                               },
+                               {
+                                   "playerId":  "p7",
+                                   "points":  1,
+                                   "wins":  0,
+                                   "secondPlaces":  0,
+                                   "thirdPlaces":  0
+                               }
+                           ],
+    "annualStagePoints":  [
+                              {
+                                  "stageId":  "stage-02",
+                                  "stageTitle":  "Etapa 02",
+                                  "stageDateLabel":  "04 de fevereiro de 2026",
+                                  "stageDateShortLabel":  "04/02",
+                                  "pointsByPlayer":  {
+                                                         "p2":  7,
+                                                         "p1":  10,
+                                                         "p3":  5,
+                                                         "p4":  7,
+                                                         "p5":  0,
+                                                         "p6":  0,
+                                                         "p7":  0
+                                                     }
+                              },
+                              {
+                                  "stageId":  "stage-01",
+                                  "stageTitle":  "Etapa 01",
+                                  "stageDateLabel":  "07 de janeiro de 2026",
+                                  "stageDateShortLabel":  "07/01",
+                                  "pointsByPlayer":  {
+                                                         "p2":  10,
+                                                         "p1":  3,
+                                                         "p3":  7,
+                                                         "p4":  0,
+                                                         "p5":  0,
+                                                         "p6":  3,
+                                                         "p7":  1
+                                                     }
+                              },
+                              {
+                                  "stageId":  "stage-03",
+                                  "stageTitle":  "Etapa 03",
+                                  "stageDateLabel":  "10 de marco de 2026",
+                                  "stageDateShortLabel":  "10/03",
+                                  "pointsByPlayer":  {
+                                                         "p2":  10,
+                                                         "p1":  7,
+                                                         "p3":  5,
+                                                         "p4":  3,
+                                                         "p5":  3,
+                                                         "p6":  0,
+                                                         "p7":  0
+                                                     }
+                              },
+                              {
+                                  "stageId":  "stage-04",
+                                  "stageTitle":  "Etapa 04",
+                                  "stageDateLabel":  "15 de julho de 2026",
+                                  "stageDateShortLabel":  "15/07",
+                                  "pointsByPlayer":  {
+                                                         "p4":  3,
+                                                         "p1":  10,
+                                                         "p2":  7,
+                                                         "p7":  0,
+                                                         "p5":  0,
+                                                         "p6":  3,
+                                                         "p3":  5
+                                                     }
+                              }
+                          ],
+    "stageMatchPoints":  [
+                             {
+                                 "stageId":  "stage-02",
+                                 "stageTitle":  "Etapa 02",
+                                 "stageDateLabel":  "04 de fevereiro de 2026",
+                                 "stageDateShortLabel":  "04/02",
+                                 "matches":  [
+                                                 {
+                                                     "matchNumber":  1,
+                                                     "label":  "Primeira partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p1":  10,
+                                                                            "p2":  7,
+                                                                            "p3":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  2,
+                                                     "label":  "Segunda partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p4":  10,
+                                                                            "p1":  7,
+                                                                            "p2":  5,
+                                                                            "p3":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  3,
+                                                     "label":  "Terceira partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p1":  10,
+                                                                            "p3":  7,
+                                                                            "p2":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  4,
+                                                     "label":  "Quarta partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p1":  10,
+                                                                            "p2":  7,
+                                                                            "p4":  5,
+                                                                            "p3":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  5,
+                                                     "label":  "Quinta partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p2":  10,
+                                                                            "p1":  7,
+                                                                            "p3":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  0
+                                                                        }
+                                                 }
+                                             ]
+                             },
+                             {
+                                 "stageId":  "stage-01",
+                                 "stageTitle":  "Etapa 01",
+                                 "stageDateLabel":  "07 de janeiro de 2026",
+                                 "stageDateShortLabel":  "07/01",
+                                 "matches":  [
+                                                 {
+                                                     "matchNumber":  1,
+                                                     "label":  "Primeira partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p2":  10,
+                                                                            "p3":  7,
+                                                                            "p1":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  3
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  2,
+                                                     "label":  "Segunda partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p1":  10,
+                                                                            "p2":  7,
+                                                                            "p3":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  3
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  3,
+                                                     "label":  "Terceira partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p2":  10,
+                                                                            "p1":  7,
+                                                                            "p3":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  3
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  4,
+                                                     "label":  "Quarta partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p2":  10,
+                                                                            "p3":  7,
+                                                                            "p1":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  3
+                                                                        }
+                                                 }
+                                             ]
+                             },
+                             {
+                                 "stageId":  "stage-03",
+                                 "stageTitle":  "Etapa 03",
+                                 "stageDateLabel":  "10 de marco de 2026",
+                                 "stageDateShortLabel":  "10/03",
+                                 "matches":  [
+                                                 {
+                                                     "matchNumber":  1,
+                                                     "label":  "Primeira partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p3":  10,
+                                                                            "p2":  7,
+                                                                            "p1":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  3,
+                                                                            "p6":  0,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  2,
+                                                     "label":  "Segunda partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p3":  10,
+                                                                            "p1":  7,
+                                                                            "p2":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  3,
+                                                                            "p6":  0,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  3,
+                                                     "label":  "Terceira partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p1":  10,
+                                                                            "p3":  7,
+                                                                            "p2":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  3,
+                                                                            "p6":  0,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  4,
+                                                     "label":  "Quarta partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p3":  10,
+                                                                            "p2":  7,
+                                                                            "p1":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  3,
+                                                                            "p6":  0,
+                                                                            "p7":  0
+                                                                        }
+                                                 }
+                                             ]
+                             },
+                             {
+                                 "stageId":  "stage-04",
+                                 "stageTitle":  "Etapa 04",
+                                 "stageDateLabel":  "15 de julho de 2026",
+                                 "stageDateShortLabel":  "15/07",
+                                 "matches":  [
+                                                 {
+                                                     "matchNumber":  1,
+                                                     "label":  "Primeira partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p1":  10,
+                                                                            "p2":  7,
+                                                                            "p3":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  2,
+                                                     "label":  "Segunda partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p1":  7,
+                                                                            "p2":  10,
+                                                                            "p3":  5,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  3,
+                                                     "label":  "Terceira partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p1":  7,
+                                                                            "p2":  5,
+                                                                            "p3":  10,
+                                                                            "p4":  3,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  0
+                                                                        }
+                                                 },
+                                                 {
+                                                     "matchNumber":  4,
+                                                     "label":  "Quarta partida",
+                                                     "pointsByPlayer":  {
+                                                                            "p1":  10,
+                                                                            "p2":  7,
+                                                                            "p3":  3,
+                                                                            "p4":  5,
+                                                                            "p5":  0,
+                                                                            "p6":  3,
+                                                                            "p7":  0
+                                                                        }
+                                                 }
+                                             ]
+                             }
+                         ],
+    "history":  [
+                    {
+                        "id":  "stage-02",
+                        "title":  "Etapa 02",
+                        "stageDateLabel":  "04 de fevereiro de 2026",
+                        "winnerName":  "Caio",
+                        "matchesPlayed":  5,
+                        "dailyPrize":  "R$Â 80,00",
+                        "annualPotContribution":  "R$Â 70,00"
+                    },
+                    {
+                        "id":  "stage-01",
+                        "title":  "Etapa 01",
+                        "stageDateLabel":  "07 de janeiro de 2026",
+                        "winnerName":  "Alisson",
+                        "matchesPlayed":  4,
+                        "dailyPrize":  "R$Â 70,00",
+                        "annualPotContribution":  "R$Â 80,00"
+                    },
+                    {
+                        "id":  "stage-03",
+                        "title":  "Etapa 03",
+                        "stageDateLabel":  "10 de marco de 2026",
+                        "winnerName":  "Thomas",
+                        "matchesPlayed":  4,
+                        "dailyPrize":  "R$Â 60,00",
+                        "annualPotContribution":  "R$Â 60,00"
+                    },
+                    {
+                        "id":  "stage-04",
+                        "title":  "Etapa 04",
+                        "stageDateLabel":  "15 de julho de 2026",
+                        "winnerName":  "Caio",
+                        "matchesPlayed":  4,
+                        "dailyPrize":  "R$ 50,00",
+                        "annualPotContribution":  "R$ 50,00"
+                    }
+                ],
+    "stageHistoryDetails":  [
+                                {
+                                    "stageId":  "stage-02",
+                                    "title":  "Etapa 02",
+                                    "stageDateLabel":  "04 de fevereiro de 2026",
+                                    "scheduledStartLabel":  "04/02/2026, 20:00",
+                                    "actualStartLabel":  "04/02/2026, 21:00",
+                                    "actualEndLabel":  "05/02/2026, 01:20",
+                                    "totalDurationSeconds":  15600,
+                                    "winnerName":  "Caio",
+                                    "dailyPrize":  "R$Â 80,00",
+                                    "annualPotContribution":  "R$Â 70,00",
+                                    "matchesPlayed":  5,
+                                    "finalRanking":  [
+                                                         {
+                                                             "playerId":  "p1",
+                                                             "playerName":  "Caio",
+                                                             "totalPoints":  44,
+                                                             "position":  1
+                                                         },
+                                                         {
+                                                             "playerId":  "p2",
+                                                             "playerName":  "Alisson",
+                                                             "totalPoints":  34,
+                                                             "position":  2
+                                                         },
+                                                         {
+                                                             "playerId":  "p4",
+                                                             "playerName":  "Tuba",
+                                                             "totalPoints":  24,
+                                                             "position":  3
+                                                         },
+                                                         {
+                                                             "playerId":  "p3",
+                                                             "playerName":  "Thomas",
+                                                             "totalPoints":  23,
+                                                             "position":  4
+                                                         },
+                                                         {
+                                                             "playerId":  "p6",
+                                                             "playerName":  "Davi",
+                                                             "totalPoints":  15,
+                                                             "position":  5
+                                                         },
+                                                         {
+                                                             "playerId":  "p7",
+                                                             "playerName":  "Juan",
+                                                             "totalPoints":  0,
+                                                             "position":  6
+                                                         },
+                                                         {
+                                                             "playerId":  "p5",
+                                                             "playerName":  "Thiago",
+                                                             "totalPoints":  0,
+                                                             "position":  7
+                                                         }
+                                                     ],
+                                    "matches":  [
+                                                    {
+                                                        "matchNumber":  1,
+                                                        "label":  "Primeira partida",
+                                                        "scheduledStartLabel":  "04/02/2026, 20:00",
+                                                        "actualStartLabel":  "04/02/2026, 21:00",
+                                                        "actualEndLabel":  "04/02/2026, 21:38",
+                                                        "durationSeconds":  2280,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  2,
+                                                        "label":  "Segunda partida",
+                                                        "scheduledStartLabel":  "04/02/2026, 20:48",
+                                                        "actualStartLabel":  "04/02/2026, 21:48",
+                                                        "actualEndLabel":  "04/02/2026, 22:33",
+                                                        "durationSeconds":  2700,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  3,
+                                                        "label":  "Terceira partida",
+                                                        "scheduledStartLabel":  "04/02/2026, 21:36",
+                                                        "actualStartLabel":  "04/02/2026, 22:36",
+                                                        "actualEndLabel":  "04/02/2026, 23:28",
+                                                        "durationSeconds":  3120,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  4,
+                                                        "label":  "Quarta partida",
+                                                        "scheduledStartLabel":  "04/02/2026, 22:24",
+                                                        "actualStartLabel":  "04/02/2026, 23:24",
+                                                        "actualEndLabel":  "05/02/2026, 00:23",
+                                                        "durationSeconds":  3540,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  5,
+                                                        "label":  "Quinta partida",
+                                                        "scheduledStartLabel":  "04/02/2026, 23:12",
+                                                        "actualStartLabel":  "05/02/2026, 00:12",
+                                                        "actualEndLabel":  "05/02/2026, 01:18",
+                                                        "durationSeconds":  3960,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    }
+                                                ]
+                                },
+                                {
+                                    "stageId":  "stage-01",
+                                    "title":  "Etapa 01",
+                                    "stageDateLabel":  "07 de janeiro de 2026",
+                                    "scheduledStartLabel":  "07/01/2026, 20:00",
+                                    "actualStartLabel":  "07/01/2026, 20:00",
+                                    "actualEndLabel":  "07/01/2026, 23:14",
+                                    "totalDurationSeconds":  11640,
+                                    "winnerName":  "Alisson",
+                                    "dailyPrize":  "R$Â 70,00",
+                                    "annualPotContribution":  "R$Â 80,00",
+                                    "matchesPlayed":  4,
+                                    "finalRanking":  [
+                                                         {
+                                                             "playerId":  "p2",
+                                                             "playerName":  "Alisson",
+                                                             "totalPoints":  37,
+                                                             "position":  1
+                                                         },
+                                                         {
+                                                             "playerId":  "p1",
+                                                             "playerName":  "Caio",
+                                                             "totalPoints":  27,
+                                                             "position":  2
+                                                         },
+                                                         {
+                                                             "playerId":  "p3",
+                                                             "playerName":  "Thomas",
+                                                             "totalPoints":  24,
+                                                             "position":  3
+                                                         },
+                                                         {
+                                                             "playerId":  "p6",
+                                                             "playerName":  "Davi",
+                                                             "totalPoints":  12,
+                                                             "position":  4
+                                                         },
+                                                         {
+                                                             "playerId":  "p7",
+                                                             "playerName":  "Juan",
+                                                             "totalPoints":  12,
+                                                             "position":  5
+                                                         },
+                                                         {
+                                                             "playerId":  "p4",
+                                                             "playerName":  "Tuba",
+                                                             "totalPoints":  12,
+                                                             "position":  6
+                                                         },
+                                                         {
+                                                             "playerId":  "p5",
+                                                             "playerName":  "Thiago",
+                                                             "totalPoints":  0,
+                                                             "position":  7
+                                                         }
+                                                     ],
+                                    "matches":  [
+                                                    {
+                                                        "matchNumber":  1,
+                                                        "label":  "Primeira partida",
+                                                        "scheduledStartLabel":  "07/01/2026, 20:00",
+                                                        "actualStartLabel":  "07/01/2026, 20:00",
+                                                        "actualEndLabel":  "07/01/2026, 20:38",
+                                                        "durationSeconds":  2280,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  2,
+                                                        "label":  "Segunda partida",
+                                                        "scheduledStartLabel":  "07/01/2026, 20:48",
+                                                        "actualStartLabel":  "07/01/2026, 20:48",
+                                                        "actualEndLabel":  "07/01/2026, 21:33",
+                                                        "durationSeconds":  2700,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  3,
+                                                        "label":  "Terceira partida",
+                                                        "scheduledStartLabel":  "07/01/2026, 21:36",
+                                                        "actualStartLabel":  "07/01/2026, 21:36",
+                                                        "actualEndLabel":  "07/01/2026, 22:28",
+                                                        "durationSeconds":  3120,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  4,
+                                                        "label":  "Quarta partida",
+                                                        "scheduledStartLabel":  "07/01/2026, 22:24",
+                                                        "actualStartLabel":  "07/01/2026, 22:24",
+                                                        "actualEndLabel":  "07/01/2026, 23:23",
+                                                        "durationSeconds":  3540,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    }
+                                                ]
+                                },
+                                {
+                                    "stageId":  "stage-03",
+                                    "title":  "Etapa 03",
+                                    "stageDateLabel":  "10 de marco de 2026",
+                                    "scheduledStartLabel":  "10/03/2026, 20:00",
+                                    "actualStartLabel":  "10/03/2026, 20:00",
+                                    "actualEndLabel":  "10/03/2026, 23:14",
+                                    "totalDurationSeconds":  11640,
+                                    "winnerName":  "Thomas",
+                                    "dailyPrize":  "R$Â 60,00",
+                                    "annualPotContribution":  "R$Â 60,00",
+                                    "matchesPlayed":  4,
+                                    "finalRanking":  [
+                                                         {
+                                                             "playerId":  "p3",
+                                                             "playerName":  "Thomas",
+                                                             "totalPoints":  37,
+                                                             "position":  1
+                                                         },
+                                                         {
+                                                             "playerId":  "p1",
+                                                             "playerName":  "Caio",
+                                                             "totalPoints":  27,
+                                                             "position":  2
+                                                         },
+                                                         {
+                                                             "playerId":  "p2",
+                                                             "playerName":  "Alisson",
+                                                             "totalPoints":  24,
+                                                             "position":  3
+                                                         },
+                                                         {
+                                                             "playerId":  "p5",
+                                                             "playerName":  "Thiago",
+                                                             "totalPoints":  12,
+                                                             "position":  4
+                                                         },
+                                                         {
+                                                             "playerId":  "p4",
+                                                             "playerName":  "Tuba",
+                                                             "totalPoints":  12,
+                                                             "position":  5
+                                                         },
+                                                         {
+                                                             "playerId":  "p6",
+                                                             "playerName":  "Davi",
+                                                             "totalPoints":  0,
+                                                             "position":  6
+                                                         },
+                                                         {
+                                                             "playerId":  "p7",
+                                                             "playerName":  "Juan",
+                                                             "totalPoints":  0,
+                                                             "position":  7
+                                                         }
+                                                     ],
+                                    "matches":  [
+                                                    {
+                                                        "matchNumber":  1,
+                                                        "label":  "Primeira partida",
+                                                        "scheduledStartLabel":  "10/03/2026, 20:00",
+                                                        "actualStartLabel":  "10/03/2026, 20:00",
+                                                        "actualEndLabel":  "10/03/2026, 20:38",
+                                                        "durationSeconds":  2280,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  2,
+                                                        "label":  "Segunda partida",
+                                                        "scheduledStartLabel":  "10/03/2026, 20:48",
+                                                        "actualStartLabel":  "10/03/2026, 20:48",
+                                                        "actualEndLabel":  "10/03/2026, 21:33",
+                                                        "durationSeconds":  2700,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  3,
+                                                        "label":  "Terceira partida",
+                                                        "scheduledStartLabel":  "10/03/2026, 21:36",
+                                                        "actualStartLabel":  "10/03/2026, 21:36",
+                                                        "actualEndLabel":  "10/03/2026, 22:28",
+                                                        "durationSeconds":  3120,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  4,
+                                                        "label":  "Quarta partida",
+                                                        "scheduledStartLabel":  "10/03/2026, 22:24",
+                                                        "actualStartLabel":  "10/03/2026, 22:24",
+                                                        "actualEndLabel":  "10/03/2026, 23:23",
+                                                        "durationSeconds":  3540,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    }
+                                                ]
+                                },
+                                {
+                                    "stageId":  "stage-04",
+                                    "title":  "Etapa 04",
+                                    "stageDateLabel":  "15 de julho de 2026",
+                                    "scheduledStartLabel":  "15/07/2026, 20:00",
+                                    "actualStartLabel":  "15/07/2026, 20:10",
+                                    "actualEndLabel":  "16/07/2026, 00:20",
+                                    "totalDurationSeconds":  15000,
+                                    "winnerName":  "Caio",
+                                    "dailyPrize":  "R$ 50,00",
+                                    "annualPotContribution":  "R$ 50,00",
+                                    "matchesPlayed":  4,
+                                    "finalRanking":  [
+                                                         {
+                                                             "playerId":  "p1",
+                                                             "playerName":  "Caio",
+                                                             "totalPoints":  34,
+                                                             "position":  1
+                                                         },
+                                                         {
+                                                             "playerId":  "p2",
+                                                             "playerName":  "Alisson",
+                                                             "totalPoints":  29,
+                                                             "position":  2
+                                                         },
+                                                         {
+                                                             "playerId":  "p3",
+                                                             "playerName":  "Thomas",
+                                                             "totalPoints":  23,
+                                                             "position":  3
+                                                         },
+                                                         {
+                                                             "playerId":  "p4",
+                                                             "playerName":  "Tuba",
+                                                             "totalPoints":  14,
+                                                             "position":  4
+                                                         },
+                                                         {
+                                                             "playerId":  "p6",
+                                                             "playerName":  "Davi",
+                                                             "totalPoints":  12,
+                                                             "position":  5
+                                                         },
+                                                         {
+                                                             "playerId":  "p7",
+                                                             "playerName":  "Juan",
+                                                             "totalPoints":  0,
+                                                             "position":  6
+                                                         },
+                                                         {
+                                                             "playerId":  "p5",
+                                                             "playerName":  "Thiago",
+                                                             "totalPoints":  0,
+                                                             "position":  7
+                                                         }
+                                                     ],
+                                    "matches":  [
+                                                    {
+                                                        "matchNumber":  1,
+                                                        "label":  "Primeira partida",
+                                                        "scheduledStartLabel":  "15/07/2026, 20:00",
+                                                        "actualStartLabel":  "15/07/2026, 20:10",
+                                                        "actualEndLabel":  "15/07/2026, 21:10",
+                                                        "durationSeconds":  3600,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  2,
+                                                        "label":  "Segunda partida",
+                                                        "scheduledStartLabel":  "15/07/2026, 20:00",
+                                                        "actualStartLabel":  "15/07/2026, 21:10",
+                                                        "actualEndLabel":  "15/07/2026, 22:15",
+                                                        "durationSeconds":  3900,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  3,
+                                                        "label":  "Terceira partida",
+                                                        "scheduledStartLabel":  "15/07/2026, 20:00",
+                                                        "actualStartLabel":  "15/07/2026, 22:15",
+                                                        "actualEndLabel":  "15/07/2026, 23:10",
+                                                        "durationSeconds":  3300,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    },
+                                                    {
+                                                        "matchNumber":  4,
+                                                        "label":  "Quarta partida",
+                                                        "scheduledStartLabel":  "15/07/2026, 20:00",
+                                                        "actualStartLabel":  "15/07/2026, 23:10",
+                                                        "actualEndLabel":  "16/07/2026, 00:20",
+                                                        "durationSeconds":  4200,
+                                                        "ranking":  [
+                                                                        {
+                                                                            "playerId":  "p1",
+                                                                            "playerName":  "Caio",
+                                                                            "points":  10,
+                                                                            "position":  1
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p2",
+                                                                            "playerName":  "Alisson",
+                                                                            "points":  7,
+                                                                            "position":  2
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p4",
+                                                                            "playerName":  "Tuba",
+                                                                            "points":  5,
+                                                                            "position":  3
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p6",
+                                                                            "playerName":  "Davi",
+                                                                            "points":  3,
+                                                                            "position":  4
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p3",
+                                                                            "playerName":  "Thomas",
+                                                                            "points":  3,
+                                                                            "position":  5
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p7",
+                                                                            "playerName":  "Juan",
+                                                                            "points":  0,
+                                                                            "position":  6
+                                                                        },
+                                                                        {
+                                                                            "playerId":  "p5",
+                                                                            "playerName":  "Thiago",
+                                                                            "points":  0,
+                                                                            "position":  7
+                                                                        }
+                                                                    ]
+                                                    }
+                                                ]
+                                }
+                            ],
+    "annualPotCents":  26000
+}

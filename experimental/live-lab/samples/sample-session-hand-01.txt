@@ -1,0 +1,24 @@
+[15:00:00] Sistema: Configuracao da mesa carregada
+[15:00:02] Sistema: Lugar 1 Tuba
+[15:00:03] Sistema: Lugar 3 Caio
+[15:00:04] Sistema: Lugar 5 Alisson
+[15:00:05] Sistema: Lugar 7 Thomas
+[15:00:06] Sistema: Botao inicial no Tuba
+[15:00:07] Sistema: Blind 25/50
+[15:00:10] Sistema: Comando de voz detectado para iniciar partida
+[15:00:12] Transcricao: call
+[15:00:14] Transcricao: call
+[15:00:16] Transcricao: call
+[15:00:18] Transcricao: check
+[15:00:22] Transcricao: check
+[15:00:24] Transcricao: check
+[15:00:27] Transcricao: apostou 100
+[15:00:31] Transcricao: fold
+[15:00:34] Transcricao: fold
+[15:00:38] Transcricao: call
+[15:00:43] Transcricao: check
+[15:00:46] Transcricao: check
+[15:00:51] Transcricao: check
+[15:00:55] Transcricao: check
+[15:00:58] Transcricao: showdown
+[15:01:02] Sistema: Comando de voz detectado para encerrar partida
