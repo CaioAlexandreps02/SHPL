@@ -26,6 +26,7 @@ import {
 import {
   drawBoardDetections,
   type BoardDetectionResult,
+  type BoardStage,
   type BoardWorkerMessage,
 } from "@/lib/live-lab/board-detection";
 import {
