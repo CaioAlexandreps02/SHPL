@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 
 import {
   deleteSavedCardSample,
@@ -34,6 +35,7 @@ import {
   type LiveLinkedStageContext,
   type LiveLinkedStageOption,
 } from "@/lib/live-lab/stage-runtime-link";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 type MediaDeviceOption = {
   deviceId: string;
@@ -51,6 +53,7 @@ type CaptureStatus = "idle" | "preview";
 type LiveLabView = "capture" | "admin" | "videos";
 type LiveSessionStatus = "idle" | "running" | "paused";
 type LiveLabMode = "lab" | "integrated";
+type IntegratedDeviceRole = "camera" | "monitor";
 type CommandKind = "start" | "end" | "save" | "none";
 type TranscriptEntry = {
   id: string;
@@ -131,10 +134,58 @@ type BrowserWindowWithSpeech = Window &
   typeof globalThis & {
     webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
     SpeechRecognition?: new () => BrowserSpeechRecognition;
-  };
+};
+
+type LiveRemoteCommand =
+  | "start-preview"
+  | "stop-preview"
+  | "start-session"
+  | "pause-session"
+  | "stop-session";
+
+type LiveRemoteMessage =
+  | {
+      type: "viewer-ready";
+      viewerId: string;
+    }
+  | {
+      type: "state";
+      deviceId: string;
+      role: IntegratedDeviceRole;
+      captureStatus: CaptureStatus;
+      liveSessionStatus: LiveSessionStatus;
+      error: string;
+    }
+  | {
+      type: "command";
+      fromId: string;
+      command: LiveRemoteCommand;
+    }
+  | {
+      type: "offer";
+      fromId: string;
+      toId: string;
+      sdp: RTCSessionDescriptionInit;
+    }
+  | {
+      type: "answer";
+      fromId: string;
+      toId: string;
+      sdp: RTCSessionDescriptionInit;
+    }
+  | {
+      type: "ice-candidate";
+      fromId: string;
+      toId: string;
+      candidate: RTCIceCandidateInit;
+    };
 
 const STORAGE_KEY = "shpl-live-lab-settings";
 const BOARD_REGION_STORAGE_KEY = "shpl-live-lab-board-region";
+const INTEGRATED_DEVICE_ROLE_STORAGE_KEY = "shpl-live-lab-integrated-device-role";
+const INTEGRATED_DEVICE_ID_STORAGE_KEY = "shpl-live-lab-integrated-device-id";
+const LIVE_REMOTE_BROADCAST_EVENT = "live-remote";
+const LIVE_REMOTE_CHANNEL_PREFIX = "shpl-live-remote";
 const BOARD_MONITOR_IDLE_INTERVAL_MS = 1200;
 const BOARD_MONITOR_ACTIVE_INTERVAL_MS = 800;
 const BOARD_ANALYSIS_MAX_WIDTH = 420;
@@ -148,6 +199,9 @@ const defaultBoardRegion: BoardRegion = {
 const COMMAND_SAMPLE_DURATION_MS = 3500;
 const CARD_RANK_OPTIONS = ["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"];
 const CARD_SUIT_OPTIONS = ["copas", "espadas", "ouros", "paus"];
+const LIVE_REMOTE_ICE_CONFIGURATION: RTCConfiguration = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+};
 
 type LiveLabPageProps = {
   mode?: LiveLabMode;
@@ -157,6 +211,12 @@ type LiveLabPageProps = {
 export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabPageProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const adminVideoRef = useRef<HTMLVideoElement | null>(null);
+  const supabaseClientRef = useRef<SupabaseClient | null>(null);
+  const liveRemoteChannelRef = useRef<RealtimeChannel | null>(null);
+  const livePeerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const remotePreviewStreamRef = useRef<MediaStream | null>(null);
+  const liveRemoteDeviceIdRef = useRef("");
+  const remoteViewerIdRef = useRef<string | null>(null);
   const snapshotCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const boardProcessingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const datasetImportInputRef = useRef<HTMLInputElement | null>(null);
@@ -220,6 +280,10 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   const [transcriptError, setTranscriptError] = useState("");
   const [activeView, setActiveView] = useState<LiveLabView>("capture");
   const [liveSessionStatus, setLiveSessionStatus] = useState<LiveSessionStatus>("idle");
+  const [deviceRole, setDeviceRole] = useState<IntegratedDeviceRole>(
+    mode === "integrated" ? "monitor" : "camera",
+  );
+  const [remoteBridgeStatus, setRemoteBridgeStatus] = useState("Selecione o papel deste dispositivo.");
   const [transcriptFeed, setTranscriptFeed] = useState<TranscriptEntry[]>([]);
   const [activeHandTitle, setActiveHandTitle] = useState("");
   const [activeHandStartedAtIso, setActiveHandStartedAtIso] = useState("");
@@ -245,6 +309,313 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
   const integratedMode = mode === "integrated";
   const boardFeaturesEnabled = !integratedMode;
+  const isRemoteMonitor = integratedMode && deviceRole === "monitor";
+  const remoteChannelName = linkedStageOption
+    ? `${LIVE_REMOTE_CHANNEL_PREFIX}:${linkedStageOption.stageId}`
+    : null;
+
+  function attachPreviewStream(stream: MediaStream | null) {
+    for (const element of [videoRef.current, adminVideoRef.current]) {
+      if (!element) {
+        continue;
+      }
+
+      element.srcObject = stream;
+      if (stream) {
+        void element.play().catch(() => undefined);
+      }
+    }
+  }
+
+  function clearRemotePreviewStream() {
+    remotePreviewStreamRef.current?.getTracks().forEach((track) => track.stop());
+    remotePreviewStreamRef.current = null;
+    livePeerConnectionRef.current?.close();
+    livePeerConnectionRef.current = null;
+    remoteViewerIdRef.current = null;
+    if (isRemoteMonitor) {
+      attachPreviewStream(null);
+    }
+  }
+
+  function getOrCreateIntegratedDeviceId() {
+    if (liveRemoteDeviceIdRef.current) {
+      return liveRemoteDeviceIdRef.current;
+    }
+
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    const storedId = window.localStorage.getItem(INTEGRATED_DEVICE_ID_STORAGE_KEY);
+
+    if (storedId) {
+      liveRemoteDeviceIdRef.current = storedId;
+      return storedId;
+    }
+
+    const nextId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `live-device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    window.localStorage.setItem(INTEGRATED_DEVICE_ID_STORAGE_KEY, nextId);
+    liveRemoteDeviceIdRef.current = nextId;
+    return nextId;
+  }
+
+  function getSupabaseClient() {
+    if (supabaseClientRef.current) {
+      return supabaseClientRef.current;
+    }
+
+    const client = createBrowserSupabaseClient();
+
+    if (!client) {
+      return null;
+    }
+
+    supabaseClientRef.current = client;
+    return client;
+  }
+
+  async function sendLiveRemoteMessage(message: LiveRemoteMessage) {
+    const channel = liveRemoteChannelRef.current;
+
+    if (!channel) {
+      return false;
+    }
+
+    const result = await channel.send({
+      type: "broadcast",
+      event: LIVE_REMOTE_BROADCAST_EVENT,
+      payload: message,
+    });
+
+    return result === "ok";
+  }
+
+  async function broadcastIntegratedState(overrides?: Partial<Extract<LiveRemoteMessage, { type: "state" }>>) {
+    if (!integratedMode || deviceRole !== "camera") {
+      return;
+    }
+
+    const deviceId = getOrCreateIntegratedDeviceId();
+
+    await sendLiveRemoteMessage({
+      type: "state",
+      deviceId,
+      role: "camera",
+      captureStatus: overrides?.captureStatus ?? captureStatus,
+      liveSessionStatus: overrides?.liveSessionStatus ?? liveSessionStatus,
+      error: overrides?.error ?? error,
+    });
+  }
+
+  function buildRemoteStatusLabel(
+    nextCaptureStatus: CaptureStatus,
+    nextLiveSessionStatus: LiveSessionStatus,
+  ) {
+    if (nextCaptureStatus !== "preview") {
+      return "Fonte conectada, mas preview ainda nao iniciado.";
+    }
+
+    if (nextLiveSessionStatus === "running") {
+      return "Preview remoto ativo e sessao continua em andamento.";
+    }
+
+    if (nextLiveSessionStatus === "paused") {
+      return "Preview remoto ativo e sessao continua pausada.";
+    }
+
+    return "Preview remoto ativo e pronto para controle.";
+  }
+
+  function ensureRemoteMediaStream() {
+    if (remotePreviewStreamRef.current) {
+      return remotePreviewStreamRef.current;
+    }
+
+    const stream = new MediaStream();
+    remotePreviewStreamRef.current = stream;
+    return stream;
+  }
+
+  function closeRemotePeerConnection() {
+    livePeerConnectionRef.current?.close();
+    livePeerConnectionRef.current = null;
+    remoteViewerIdRef.current = null;
+  }
+
+  function resetRemotePreviewState() {
+    clearRemotePreviewStream();
+    setCaptureStatus("idle");
+    setLiveSessionStatus("idle");
+    liveSessionStatusRef.current = "idle";
+  }
+
+  async function announceViewerReady() {
+    if (!integratedMode || deviceRole !== "monitor") {
+      return;
+    }
+
+    const viewerId = getOrCreateIntegratedDeviceId();
+    const sent = await sendLiveRemoteMessage({
+      type: "viewer-ready",
+      viewerId,
+    });
+
+    if (sent) {
+      setRemoteBridgeStatus("Aguardando a fonte de captura responder com o preview remoto.");
+    }
+  }
+
+  async function createOfferForViewer(viewerId: string) {
+    if (!streamRef.current) {
+      return;
+    }
+
+    closeRemotePeerConnection();
+
+    const peerConnection = new RTCPeerConnection(LIVE_REMOTE_ICE_CONFIGURATION);
+    livePeerConnectionRef.current = peerConnection;
+    remoteViewerIdRef.current = viewerId;
+
+    streamRef.current.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, streamRef.current as MediaStream);
+    });
+
+    peerConnection.onicecandidate = (event) => {
+      if (!event.candidate) {
+        return;
+      }
+
+      void sendLiveRemoteMessage({
+        type: "ice-candidate",
+        fromId: getOrCreateIntegratedDeviceId(),
+        toId: viewerId,
+        candidate: event.candidate.toJSON(),
+      });
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      if (peerConnection.connectionState === "connected") {
+        setRemoteBridgeStatus("Fonte transmitindo preview remoto para o dispositivo monitor.");
+      }
+
+      if (peerConnection.connectionState === "failed") {
+        setRemoteBridgeStatus("Falha ao transmitir o preview remoto. Tentando reconectar...");
+      }
+    };
+
+    const offer = await peerConnection.createOffer({
+      offerToReceiveAudio: false,
+      offerToReceiveVideo: false,
+    });
+    await peerConnection.setLocalDescription(offer);
+
+    await sendLiveRemoteMessage({
+      type: "offer",
+      fromId: getOrCreateIntegratedDeviceId(),
+      toId: viewerId,
+      sdp: offer,
+    });
+  }
+
+  async function handleRemoteOfferMessage(message: Extract<LiveRemoteMessage, { type: "offer" }>) {
+    if (deviceRole !== "monitor" || message.toId !== getOrCreateIntegratedDeviceId()) {
+      return;
+    }
+
+    closeRemotePeerConnection();
+
+    const peerConnection = new RTCPeerConnection(LIVE_REMOTE_ICE_CONFIGURATION);
+    livePeerConnectionRef.current = peerConnection;
+    remoteViewerIdRef.current = message.fromId;
+    const remoteStream = ensureRemoteMediaStream();
+    remoteStream.getTracks().forEach((track) => remoteStream.removeTrack(track));
+
+    peerConnection.ontrack = (event) => {
+      const [stream] = event.streams;
+
+      if (stream) {
+        remotePreviewStreamRef.current = stream;
+        attachPreviewStream(stream);
+        setCaptureStatus("preview");
+        setRemoteBridgeStatus("Preview remoto conectado. Este dispositivo esta monitorando a fonte.");
+        return;
+      }
+
+      const nextRemoteStream = ensureRemoteMediaStream();
+      nextRemoteStream.addTrack(event.track);
+      attachPreviewStream(nextRemoteStream);
+      setCaptureStatus("preview");
+      setRemoteBridgeStatus("Preview remoto conectado. Este dispositivo esta monitorando a fonte.");
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (!event.candidate) {
+        return;
+      }
+
+      void sendLiveRemoteMessage({
+        type: "ice-candidate",
+        fromId: getOrCreateIntegratedDeviceId(),
+        toId: message.fromId,
+        candidate: event.candidate.toJSON(),
+      });
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      if (peerConnection.connectionState === "failed") {
+        setRemoteBridgeStatus("Falha na conexao com a fonte. Tentando reabrir o preview remoto...");
+        resetRemotePreviewState();
+      }
+
+      if (peerConnection.connectionState === "disconnected") {
+        setRemoteBridgeStatus("Fonte desconectada. Aguardando nova conexao...");
+      }
+    };
+
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+
+    await sendLiveRemoteMessage({
+      type: "answer",
+      fromId: getOrCreateIntegratedDeviceId(),
+      toId: message.fromId,
+      sdp: answer,
+    });
+  }
+
+  async function handleRemoteAnswerMessage(message: Extract<LiveRemoteMessage, { type: "answer" }>) {
+    if (deviceRole !== "camera" || message.toId !== getOrCreateIntegratedDeviceId()) {
+      return;
+    }
+
+    if (!livePeerConnectionRef.current) {
+      return;
+    }
+
+    await livePeerConnectionRef.current.setRemoteDescription(
+      new RTCSessionDescription(message.sdp),
+    );
+  }
+
+  async function handleRemoteIceCandidateMessage(
+    message: Extract<LiveRemoteMessage, { type: "ice-candidate" }>,
+  ) {
+    if (message.toId !== getOrCreateIntegratedDeviceId()) {
+      return;
+    }
+
+    if (!livePeerConnectionRef.current) {
+      return;
+    }
+
+    await livePeerConnectionRef.current.addIceCandidate(new RTCIceCandidate(message.candidate));
+  }
 
   const refreshLinkedStageContext = useCallback(() => {
     if (!integratedMode || !linkedStageOption) {
@@ -317,6 +688,18 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       return;
     }
 
+    getOrCreateIntegratedDeviceId();
+
+    if (integratedMode) {
+      const storedDeviceRole = window.localStorage.getItem(
+        INTEGRATED_DEVICE_ROLE_STORAGE_KEY,
+      ) as IntegratedDeviceRole | null;
+
+      if (storedDeviceRole === "camera" || storedDeviceRole === "monitor") {
+        setDeviceRole(storedDeviceRole);
+      }
+    }
+
     let hasStoredBoardRegion = false;
 
     const storedBoardRegionValue = window.localStorage.getItem(BOARD_REGION_STORAGE_KEY);
@@ -372,7 +755,190 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     } finally {
       hasHydratedSettingsRef.current = true;
     }
-  }, [loadDevices]);
+  }, [integratedMode, loadDevices]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !integratedMode) {
+      return;
+    }
+
+    window.localStorage.setItem(INTEGRATED_DEVICE_ROLE_STORAGE_KEY, deviceRole);
+  }, [deviceRole, integratedMode]);
+
+  useEffect(() => {
+    if (!integratedMode || deviceRole !== "monitor") {
+      return;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    setCaptureStatus("idle");
+    setLiveSessionStatus("idle");
+    liveSessionStatusRef.current = "idle";
+    attachPreviewStream(remotePreviewStreamRef.current);
+  }, [deviceRole, integratedMode]);
+
+  useEffect(() => {
+    if (!integratedMode) {
+      return;
+    }
+
+    if (deviceRole === "camera") {
+      setRemoteBridgeStatus("Este dispositivo ficou como fonte de captura da transmissao.");
+      attachPreviewStream(streamRef.current);
+      return;
+    }
+
+    setRemoteBridgeStatus("Este dispositivo ficou como monitor de controle da transmissao.");
+  }, [deviceRole, integratedMode]);
+
+  useEffect(() => {
+    if (!integratedMode || !remoteChannelName) {
+      setRemoteBridgeStatus("Selecione uma partida vinculada para conectar a transmissao.");
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setRemoteBridgeStatus("Supabase nao configurado. O preview remoto fica indisponivel.");
+      return;
+    }
+
+    const deviceId = getOrCreateIntegratedDeviceId();
+    const channel = supabase.channel(remoteChannelName);
+    liveRemoteChannelRef.current = channel;
+
+    channel.on(
+      "broadcast",
+      { event: LIVE_REMOTE_BROADCAST_EVENT },
+      ({ payload }: { payload: LiveRemoteMessage }) => {
+        if (!payload) {
+          return;
+        }
+
+        if (payload.type === "viewer-ready") {
+          if (deviceRole !== "camera" || payload.viewerId === deviceId || !streamRef.current) {
+            return;
+          }
+
+          setRemoteBridgeStatus("Monitor conectado. Preparando preview remoto...");
+          void createOfferForViewer(payload.viewerId);
+          return;
+        }
+
+        if (payload.type === "state") {
+          if (payload.deviceId === deviceId || payload.role !== "camera" || deviceRole !== "monitor") {
+            return;
+          }
+
+          setCaptureStatus(payload.captureStatus);
+          setLiveSessionStatus(payload.liveSessionStatus);
+          liveSessionStatusRef.current = payload.liveSessionStatus;
+          setRemoteBridgeStatus(
+            payload.error
+              ? `Fonte reportou erro: ${payload.error}`
+              : buildRemoteStatusLabel(payload.captureStatus, payload.liveSessionStatus),
+          );
+
+          if (payload.captureStatus === "preview") {
+            void announceViewerReady();
+          } else {
+            resetRemotePreviewState();
+          }
+
+          return;
+        }
+
+        if (payload.type === "command") {
+          if (deviceRole !== "camera" || payload.fromId === deviceId) {
+            return;
+          }
+
+          if (payload.command === "start-preview") {
+            void startPreview();
+            return;
+          }
+
+          if (payload.command === "stop-preview") {
+            stopStream();
+            return;
+          }
+
+          if (payload.command === "start-session") {
+            void startLiveSession();
+            return;
+          }
+
+          if (payload.command === "pause-session") {
+            pauseLiveSession();
+            return;
+          }
+
+          if (payload.command === "stop-session") {
+            void stopLiveSession();
+          }
+
+          return;
+        }
+
+        if (payload.type === "offer") {
+          void handleRemoteOfferMessage(payload);
+          return;
+        }
+
+        if (payload.type === "answer") {
+          void handleRemoteAnswerMessage(payload);
+          return;
+        }
+
+        if (payload.type === "ice-candidate") {
+          void handleRemoteIceCandidateMessage(payload);
+        }
+      },
+    );
+
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        if (deviceRole === "camera") {
+          setRemoteBridgeStatus("Este dispositivo esta pronto para transmitir o preview.");
+          void broadcastIntegratedState();
+          return;
+        }
+
+        setRemoteBridgeStatus("Monitor conectado. Aguardando a fonte de captura publicar o preview.");
+        void announceViewerReady();
+        return;
+      }
+
+      if (status === "CHANNEL_ERROR") {
+        setRemoteBridgeStatus("Falha ao conectar o canal remoto da transmissao.");
+      }
+    });
+
+    return () => {
+      if (liveRemoteChannelRef.current === channel) {
+        liveRemoteChannelRef.current = null;
+      }
+
+      closeRemotePeerConnection();
+      if (deviceRole === "monitor") {
+        resetRemotePreviewState();
+      }
+      void channel.unsubscribe();
+    };
+  }, [deviceRole, integratedMode, remoteChannelName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!integratedMode || deviceRole !== "camera" || !liveRemoteChannelRef.current) {
+      return;
+    }
+
+    void broadcastIntegratedState();
+  }, [captureStatus, deviceRole, error, integratedMode, liveSessionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -431,6 +997,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     if (
       hasAttemptedAutoPreviewRef.current ||
       isLoadingDevices ||
+      isRemoteMonitor ||
       captureStatus !== "idle" ||
       (!isVideoEnabled && !isAudioEnabled)
     ) {
@@ -452,6 +1019,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     captureStatus,
     isAudioEnabled,
     isLoadingDevices,
+    isRemoteMonitor,
     isVideoEnabled,
     videoDevices.length,
   ]);
@@ -906,6 +1474,16 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     try {
       setError("");
 
+      if (isRemoteMonitor) {
+        setRemoteBridgeStatus("Enviando comando para a fonte abrir o preview...");
+        await sendLiveRemoteMessage({
+          type: "command",
+          fromId: getOrCreateIntegratedDeviceId(),
+          command: "start-preview",
+        });
+        return;
+      }
+
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Seu navegador nao suporta captura de camera e microfone.");
       }
@@ -974,13 +1552,21 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       await loadDevices();
       setCaptureStatus("preview");
       setPreviewSessionId((current) => current + 1);
+      await broadcastIntegratedState({
+        captureStatus: "preview",
+        error: "",
+      });
     } catch (previewError) {
       setCaptureStatus("idle");
-      setError(
+      const nextError =
         previewError instanceof Error
           ? previewError.message
-          : "Nao foi possivel iniciar o preview.",
-      );
+          : "Nao foi possivel iniciar o preview.";
+      setError(nextError);
+      await broadcastIntegratedState({
+        captureStatus: "idle",
+        error: nextError,
+      });
     }
   }
 
@@ -998,7 +1584,19 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   }
 
   function stopStream() {
+    if (isRemoteMonitor) {
+      setRemoteBridgeStatus("Enviando comando para a fonte encerrar o preview...");
+      void sendLiveRemoteMessage({
+        type: "command",
+        fromId: getOrCreateIntegratedDeviceId(),
+        command: "stop-preview",
+      });
+      resetRemotePreviewState();
+      return;
+    }
+
     void stopLiveSession({ restartBoardMonitor: false });
+    clearRemotePreviewStream();
 
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
@@ -1012,6 +1610,11 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     }
 
     setCaptureStatus("idle");
+    void broadcastIntegratedState({
+      captureStatus: "idle",
+      liveSessionStatus: liveSessionStatusRef.current,
+      error: "",
+    });
   }
 
   function getSpeechRecognitionConstructor() {
@@ -1075,6 +1678,16 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     try {
       setTranscriptError("");
 
+      if (isRemoteMonitor) {
+        setRemoteBridgeStatus("Enviando comando para a fonte iniciar a sessao continua...");
+        await sendLiveRemoteMessage({
+          type: "command",
+          fromId: getOrCreateIntegratedDeviceId(),
+          command: "start-session",
+        });
+        return;
+      }
+
       const currentLinkedStageContext = refreshLinkedStageContext();
 
       if (integratedMode && !currentLinkedStageContext) {
@@ -1100,6 +1713,10 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
         liveSessionStatusRef.current = "running";
         setLiveSessionStatus("running");
+        await broadcastIntegratedState({
+          liveSessionStatus: "running",
+          error: "",
+        });
         startCommandRecognition();
         commandLoopIdRef.current += 1;
         void runCommandLoop(commandLoopIdRef.current);
@@ -1137,6 +1754,10 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       liveSessionStatusRef.current = "running";
       commandLoopIdRef.current += 1;
       setLiveSessionStatus("running");
+      await broadcastIntegratedState({
+        liveSessionStatus: "running",
+        error: "",
+      });
       setTranscriptFeed([]);
       sessionTranscriptStartedAtRef.current = new Date().toISOString();
       sessionTranscriptLinesRef.current = [];
@@ -1172,6 +1793,16 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   }
 
   function pauseLiveSession() {
+    if (isRemoteMonitor) {
+      setRemoteBridgeStatus("Enviando comando para pausar a sessao continua...");
+      void sendLiveRemoteMessage({
+        type: "command",
+        fromId: getOrCreateIntegratedDeviceId(),
+        command: "pause-session",
+      });
+      return;
+    }
+
     if (liveSessionStatusRef.current !== "running") {
       return;
     }
@@ -1189,7 +1820,10 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     if (activeHandRef.current?.recorder.state === "recording") {
       activeHandRef.current.recorder.pause();
     }
-
+    void broadcastIntegratedState({
+      liveSessionStatus: "paused",
+      error: "",
+    });
   }
 
   function appendSessionTranscriptLine(content: string) {
@@ -1201,6 +1835,16 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
   async function stopLiveSession(options: { restartBoardMonitor?: boolean } = {}) {
     const { restartBoardMonitor = true } = options;
+
+    if (isRemoteMonitor) {
+      setRemoteBridgeStatus("Enviando comando para encerrar a sessao continua...");
+      await sendLiveRemoteMessage({
+        type: "command",
+        fromId: getOrCreateIntegratedDeviceId(),
+        command: "stop-session",
+      });
+      return;
+    }
 
     liveSessionStatusRef.current = "idle";
     setLiveSessionStatus("idle");
@@ -1229,6 +1873,11 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     ) {
       await startBoardMonitor({ skipPreviewCheck: true, silent: true });
     }
+
+    await broadcastIntegratedState({
+      liveSessionStatus: "idle",
+      error: "",
+    });
   }
 
   async function runCommandLoop(loopId: number) {
@@ -3074,11 +3723,54 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
             {integratedMode ? (
               <div className="mt-4 rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] p-4">
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                   <MetricCard label="Etapa vinculada" value={linkedStageTitle} />
                   <MetricCard label="Partida ativa" value={linkedMatchLabel} />
                   <MetricCard label="Blind atual" value={linkedBlindLabel} />
+                  <MetricCard
+                    label="Papel deste aparelho"
+                    value={deviceRole === "camera" ? "Fonte de captura" : "Monitor de controle"}
+                  />
                 </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <button
+                    className={`rounded-[1rem] border px-4 py-4 text-left transition ${
+                      deviceRole === "camera"
+                        ? "border-[rgba(255,208,101,0.28)] bg-[rgba(255,183,32,0.12)]"
+                        : "border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)]"
+                    }`}
+                    onClick={() => setDeviceRole("camera")}
+                    type="button"
+                  >
+                    <p className="text-sm font-bold text-[rgba(255,239,192,0.96)]">
+                      Fonte de captura
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-[rgba(237,226,197,0.68)]">
+                      Use no celular que vai ficar no tripe. Este aparelho abre a camera e envia o preview.
+                    </p>
+                  </button>
+                  <button
+                    className={`rounded-[1rem] border px-4 py-4 text-left transition ${
+                      deviceRole === "monitor"
+                        ? "border-[rgba(255,208,101,0.28)] bg-[rgba(255,183,32,0.12)]"
+                        : "border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)]"
+                    }`}
+                    onClick={() => setDeviceRole("monitor")}
+                    type="button"
+                  >
+                    <p className="text-sm font-bold text-[rgba(255,239,192,0.96)]">
+                      Monitor de controle
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-[rgba(237,226,197,0.68)]">
+                      Use no PC ou no segundo celular. Este aparelho nao abre a camera e apenas monitora a fonte.
+                    </p>
+                  </button>
+                </div>
+
+                <p className="mt-4 rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)] px-4 py-3 text-sm text-[rgba(237,226,197,0.76)]">
+                  Ponte remota: {remoteBridgeStatus}
+                </p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   {linkedSeatSummaries.length === 0 ? (
@@ -3179,18 +3871,20 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                       />
                     ) : null}
 
-                    {captureStatus === "idle" ? (
-                      <div className="absolute inset-0 flex items-center justify-center bg-[rgba(2,10,7,0.72)]">
-                        <div className="rounded-[1.4rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(8,29,21,0.92)] px-5 py-4 text-center shadow-[0_18px_40px_rgba(0,0,0,0.32)]">
-                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[rgba(255,236,184,0.74)]">
-                            Preview desligado
-                          </p>
-                          <p className="mt-2 text-sm text-[rgba(237,226,197,0.68)]">
-                            A tela tenta iniciar o preview automaticamente assim que a camera estiver disponivel.
-                          </p>
-                        </div>
-                      </div>
-                    ) : null}
+                {captureStatus === "idle" ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-[rgba(2,10,7,0.72)]">
+                    <div className="rounded-[1.4rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(8,29,21,0.92)] px-5 py-4 text-center shadow-[0_18px_40px_rgba(0,0,0,0.32)]">
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[rgba(255,236,184,0.74)]">
+                        Preview desligado
+                      </p>
+                      <p className="mt-2 text-sm text-[rgba(237,226,197,0.68)]">
+                        {isRemoteMonitor
+                          ? "Este dispositivo esta aguardando a fonte de captura transmitir o preview remoto."
+                          : "A tela tenta iniciar o preview automaticamente assim que a camera estiver disponivel."}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
                   </div>
                 </div>
               </section>
@@ -3255,56 +3949,107 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                     </div>
                   ) : null}
 
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[rgba(255,239,192,0.92)]">
-                      Camera
-                    </span>
-                    <select
-                      className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
-                      disabled={isLoadingDevices || videoDevices.length === 0}
-                      onChange={(event) => setSelectedVideoDeviceId(event.target.value)}
-                      value={selectedVideoDeviceId}
-                    >
-                      {videoDevices.map((device) => (
-                        <option key={device.deviceId} value={device.deviceId}>
-                          {device.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {integratedMode ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <button
+                        className={`rounded-[1rem] border px-4 py-4 text-left transition ${
+                          deviceRole === "camera"
+                            ? "border-[rgba(255,208,101,0.28)] bg-[rgba(255,183,32,0.12)]"
+                            : "border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)]"
+                        }`}
+                        onClick={() => setDeviceRole("camera")}
+                        type="button"
+                      >
+                        <p className="text-sm font-bold text-[rgba(255,239,192,0.96)]">
+                          Este aparelho transmite
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[rgba(237,226,197,0.68)]">
+                          Abre camera e microfone locais para enviar o preview remoto.
+                        </p>
+                      </button>
+                      <button
+                        className={`rounded-[1rem] border px-4 py-4 text-left transition ${
+                          deviceRole === "monitor"
+                            ? "border-[rgba(255,208,101,0.28)] bg-[rgba(255,183,32,0.12)]"
+                            : "border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)]"
+                        }`}
+                        onClick={() => setDeviceRole("monitor")}
+                        type="button"
+                      >
+                        <p className="text-sm font-bold text-[rgba(255,239,192,0.96)]">
+                          Este aparelho monitora
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[rgba(237,226,197,0.68)]">
+                          Nao abre camera local. So acompanha o preview e controla a sessao da fonte.
+                        </p>
+                      </button>
+                    </div>
+                  ) : null}
 
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[rgba(255,239,192,0.92)]">
-                      Microfone
-                    </span>
-                    <select
-                      className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
-                      disabled={isLoadingDevices || audioDevices.length === 0}
-                      onChange={(event) => setSelectedAudioDeviceId(event.target.value)}
-                      value={selectedAudioDeviceId}
-                    >
-                      {audioDevices.map((device) => (
-                        <option key={device.deviceId} value={device.deviceId}>
-                          {device.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {(!integratedMode || deviceRole === "camera") ? (
+                    <>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[rgba(255,239,192,0.92)]">
+                          Camera
+                        </span>
+                        <select
+                          className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
+                          disabled={isLoadingDevices || videoDevices.length === 0}
+                          onChange={(event) => setSelectedVideoDeviceId(event.target.value)}
+                          value={selectedVideoDeviceId}
+                        >
+                          {videoDevices.map((device) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                              {device.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <ToggleCard
-                      description="Mantem a camera da live ligada para o preview e os futuros cortes."
-                      isActive={isVideoEnabled}
-                      label="Video ativo"
-                      onToggle={() => setIsVideoEnabled((current) => !current)}
-                    />
-                    <ToggleCard
-                      description="Usa o audio da propria camera para a transcricao continua da sessao."
-                      isActive={isAudioEnabled}
-                      label="Audio ativo"
-                      onToggle={() => setIsAudioEnabled((current) => !current)}
-                    />
-                  </div>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[rgba(255,239,192,0.92)]">
+                          Microfone
+                        </span>
+                        <select
+                          className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
+                          disabled={isLoadingDevices || audioDevices.length === 0}
+                          onChange={(event) => setSelectedAudioDeviceId(event.target.value)}
+                          value={selectedAudioDeviceId}
+                        >
+                          {audioDevices.map((device) => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                              {device.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <ToggleCard
+                          description="Mantem a camera da live ligada para o preview e os futuros cortes."
+                          isActive={isVideoEnabled}
+                          label="Video ativo"
+                          onToggle={() => setIsVideoEnabled((current) => !current)}
+                        />
+                        <ToggleCard
+                          description="Usa o audio da propria camera para a transcricao continua da sessao."
+                          isActive={isAudioEnabled}
+                          label="Audio ativo"
+                          onToggle={() => setIsAudioEnabled((current) => !current)}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4 text-sm leading-7 text-[rgba(237,226,197,0.72)]">
+                      Este aparelho esta em modo monitor. A camera e o microfone locais ficam em espera, e o preview aparece assim que a fonte de captura publicar o sinal remoto.
+                    </div>
+                  )}
+
+                  {integratedMode ? (
+                    <p className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[rgba(237,226,197,0.76)]">
+                      Ponte remota: {remoteBridgeStatus}
+                    </p>
+                  ) : null}
                 </div>
               </section>
             </div>
