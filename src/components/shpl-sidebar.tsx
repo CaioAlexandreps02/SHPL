@@ -4,27 +4,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
-import { canManageTable, type AccessRole } from "@/lib/auth/roles";
-
-const navItems = [
-  { href: "/shpl-2026/dashboard", label: "Dashboard", icon: "D", access: "all" as const },
-  { href: "/shpl-2026/jogadores", label: "Participantes", icon: "P", access: "admin" as const },
-  { href: "/shpl-2026/ranking", label: "Ranking", icon: "R", access: "all" as const },
-  { href: "/shpl-2026/etapas", label: "Etapas", icon: "E", access: "all" as const },
-  { href: "/shpl-2026/transmissao", label: "Transmissao", icon: "T", access: "table" as const },
-  { href: "/shpl-2026/historico", label: "Historico", icon: "H", access: "admin" as const },
-  { href: "/shpl-2026/estatisticas", label: "Estatisticas", icon: "S", access: "all" as const },
-  { href: "/shpl-2026/configuracoes", label: "Configuracoes", icon: "C", access: "admin" as const },
-];
+import type { AccessRole } from "@/lib/auth/roles";
+import { getVisibleShplNavItems, isShplNavItemActive } from "@/lib/navigation/shpl-nav";
 
 export function SHPLSidebar({ roles }: { roles: AccessRole[] }) {
   const pathname = usePathname();
   const router = useRouter();
-  const access = { roles };
-  const isAdmin = roles.includes("Administrador");
-  const visibleNavItems = navItems.filter((item) =>
-    item.access === "all" ? true : item.access === "admin" ? isAdmin : canManageTable(access)
-  );
+  const visibleNavItems = getVisibleShplNavItems(roles);
 
   function handleBackToMenu() {
     router.push("/menu");
@@ -49,7 +35,7 @@ export function SHPLSidebar({ roles }: { roles: AccessRole[] }) {
           <Link
             key={item.href}
             className={`flex items-center gap-3 rounded-[1.1rem] border px-4 py-3 text-sm font-semibold transition ${
-              pathname === item.href
+              isShplNavItemActive(pathname, item.href)
                 ? "border-[rgba(255,208,101,0.52)] bg-[linear-gradient(180deg,rgba(255,187,39,0.12),rgba(255,187,39,0.04))] text-[rgba(255,236,184,0.98)] shadow-[0_0_0_1px_rgba(255,208,101,0.08)]"
                 : "border-transparent bg-white/[0.03] text-[rgba(248,242,225,0.88)] hover:border-[rgba(255,208,101,0.22)] hover:bg-white/[0.06]"
             }`}

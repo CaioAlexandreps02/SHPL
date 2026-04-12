@@ -5,13 +5,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import type { AccessRole } from "@/lib/auth/access";
-import { compareStageRanking } from "@/lib/domain/rules";
+import type { AccessRole } from "@/lib/auth/roles";
+import { calculateMatchPoints, compareStageRanking } from "@/lib/domain/rules";
 import type { BlindLevel, LeagueSnapshot, Stage } from "@/lib/domain/types";
 import {
   LIVE_LAB_TOTAL_TABLE_SEATS,
   STAGE_RUNTIME_STORAGE_KEY_PREFIX,
 } from "@/lib/live-lab/stage-runtime-link";
+import { getVisibleShplNavItems, isShplNavItemActive } from "@/lib/navigation/shpl-nav";
 
 type StagePlayerControl = {
   playerId: string;
@@ -21,6 +22,11 @@ type StagePlayerControl = {
   leftStage: boolean;
   outOfCurrentMatch: boolean;
   matchPoints: number[];
+};
+
+type PlayerActionSnapshot = {
+  players: StagePlayerControl[];
+  selectedPlayerId: string | null;
 };
 
 const SETTINGS_STORAGE_KEY = "shpl-2026-settings";
@@ -37,7 +43,6 @@ export function StageSetupScreen({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isAdmin = roles.includes("Administrador");
   const [blindLevels, setBlindLevels] = useState<BlindLevel[]>(snapshot.blindStructure);
   const [clockSeconds, setClockSeconds] = useState(
     snapshot.liveControls.actionClockOptions[1] ?? snapshot.liveControls.actionClockOptions[0] ?? 30
@@ -74,6 +79,7 @@ export function StageSetupScreen({
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(
     snapshot.annualRanking[0]?.playerId ?? null
   );
+  const [playerActionHistory, setPlayerActionHistory] = useState<PlayerActionSnapshot[]>([]);
   const [averageStack, setAverageStack] = useState("3000");
   const [players, setPlayers] = useState<StagePlayerControl[]>(
     snapshot.annualRanking.map((entry) => ({
@@ -332,6 +338,14 @@ export function StageSetupScreen({
     () => players.some((player) => (player.matchPoints[currentMatchIndex] ?? 0) > 0),
     [currentMatchIndex, players]
   );
+  const canMarkSelectedPlayerOut =
+    Boolean(selectedPlayer) &&
+    !selectedPlayer?.leftStage &&
+    !selectedPlayer?.outOfCurrentMatch &&
+    Boolean(selectedPlayer?.annualPaid) &&
+    Boolean(selectedPlayer?.dailyPaid) &&
+    !stageClosedAt &&
+    !currentMatchClosed;
   const canCloseCurrentMatch =
     currentMatchStartedAt !== null &&
     !currentMatchClosed &&
@@ -481,6 +495,7 @@ export function StageSetupScreen({
 
   function performStartCurrentMatch() {
     const nowIso = new Date().toISOString();
+    setPlayerActionHistory([]);
     setPlayers((currentPlayers) =>
       currentPlayers.map((player) => ({
         ...player,
@@ -496,6 +511,7 @@ export function StageSetupScreen({
   function performStartNextMatch() {
     const nowIso = new Date().toISOString();
 
+    setPlayerActionHistory([]);
     setPlayers((currentPlayers) =>
       currentPlayers.map((player) => ({
         ...player,
@@ -590,23 +606,40 @@ export function StageSetupScreen({
       currentPlayers.map((player) =>
         player.playerId === selectedPlayer.playerId ? updater(player) : player
       )
-    );
+      );
+  }
+
+  function pushPlayerActionSnapshot() {
+    setPlayerActionHistory((currentHistory) => [
+      ...currentHistory,
+      {
+        players: structuredClone(players),
+        selectedPlayerId,
+      },
+    ]);
   }
 
   function handleConfirmAnnualBuyIn() {
+    pushPlayerActionSnapshot();
     updateSelectedPlayer((player) => ({ ...player, annualPaid: true }));
+    setStageNotice("Buy-in anual confirmado.");
   }
 
   function handleConfirmDailyBuyIn() {
     if (!selectedPlayer?.annualPaid) {
+      setStageNotice("Confirme primeiro o buy-in anual para liberar o buy-in do dia.");
       return;
     }
 
+    pushPlayerActionSnapshot();
     updateSelectedPlayer((player) => ({ ...player, dailyPaid: true }));
+    setStageNotice("Buy-in do dia confirmado.");
   }
 
   function handleConfirmBothBuyIns() {
+    pushPlayerActionSnapshot();
     updateSelectedPlayer((player) => ({ ...player, annualPaid: true, dailyPaid: true }));
+    setStageNotice("Buy-in anual e do dia confirmados.");
   }
 
   function toggleActionClock() {
@@ -618,6 +651,14 @@ export function StageSetupScreen({
       return;
     }
 
+    if (!selectedPlayer.annualPaid || !selectedPlayer.dailyPaid) {
+      setStageNotice("So e possivel marcar a saida da partida para jogadores com buy-in anual e do dia confirmados.");
+      return;
+    }
+
+    pushPlayerActionSnapshot();
+    let winnerName: string | null = null;
+
     setPlayers((currentPlayers) => {
       const activePlayers = currentPlayers.filter(
         (player) =>
@@ -627,7 +668,7 @@ export function StageSetupScreen({
           !player.outOfCurrentMatch
       );
       const finalPosition = activePlayers.length;
-      const pointsForThisExit = calculateDayMatchPoints(finalPosition);
+      const pointsForThisExit = calculateMatchPoints(finalPosition);
 
       const nextPlayers = currentPlayers.map((player) => {
         if (player.playerId !== selectedPlayer.playerId) {
@@ -650,13 +691,14 @@ export function StageSetupScreen({
 
       if (remainingPlayers.length === 1) {
         const winnerId = remainingPlayers[0].playerId;
+        winnerName = remainingPlayers[0].playerName;
         return nextPlayers.map((player) => {
           if (player.playerId !== winnerId) {
             return player;
           }
 
           const nextMatchPoints = [...player.matchPoints];
-          nextMatchPoints[currentMatchIndex] = calculateDayMatchPoints(1);
+          nextMatchPoints[currentMatchIndex] = calculateMatchPoints(1);
 
           return {
             ...player,
@@ -665,8 +707,15 @@ export function StageSetupScreen({
         });
       }
 
-      return nextPlayers;
-    });
+        return nextPlayers;
+      });
+
+    if (winnerName) {
+      setStageNotice(`${winnerName} ficou sozinho na partida e assumiu automaticamente o 1o lugar.`);
+      return;
+    }
+
+    setStageNotice(`${selectedPlayer.playerName} saiu da partida atual.`);
   }
 
   function handleLeaveStage() {
@@ -674,6 +723,7 @@ export function StageSetupScreen({
       return;
     }
 
+    pushPlayerActionSnapshot();
     setPlayers((currentPlayers) =>
       currentPlayers.map((player) => {
         if (player.playerId !== selectedPlayer.playerId) {
@@ -685,8 +735,25 @@ export function StageSetupScreen({
           leftStage: true,
           outOfCurrentMatch: true,
         };
-      })
-    );
+        })
+      );
+    setStageNotice(`${selectedPlayer.playerName} saiu da etapa.`);
+  }
+
+  function handleUndoLastAction() {
+    setPlayerActionHistory((currentHistory) => {
+      const previousSnapshot = currentHistory[currentHistory.length - 1];
+
+      if (!previousSnapshot) {
+        setStageNotice("Nao ha nenhuma acao recente para desfazer.");
+        return currentHistory;
+      }
+
+      setPlayers(previousSnapshot.players);
+      setSelectedPlayerId(previousSnapshot.selectedPlayerId);
+      setStageNotice("Ultima acao desfeita.");
+      return currentHistory.slice(0, -1);
+    });
   }
 
   function handleRequestCloseStage() {
@@ -803,33 +870,29 @@ export function StageSetupScreen({
             />
 
             <div className="grid w-full gap-3">
-              {[
-                { href: "/shpl-2026/dashboard", label: "D", adminOnly: false },
-                { href: "/shpl-2026/jogadores", label: "P", adminOnly: true },
-                { href: "/shpl-2026/ranking", label: "R", adminOnly: false },
-                { href: "/shpl-2026/etapas", label: "E", adminOnly: false },
-                { href: "/shpl-2026/historico", label: "H", adminOnly: true },
-                { href: "/shpl-2026/estatisticas", label: "S", adminOnly: false },
-                { href: "/shpl-2026/configuracoes", label: "C", adminOnly: true },
-              ]
-                .filter((item) => (item.adminOnly ? isAdmin : true))
-                .map((item) => (
+              {getVisibleShplNavItems(roles).map((item) => (
                 <Link
                   key={item.href}
                   className={`${sideButtonClassName} ${
-                    item.href === "/shpl-2026/etapas"
-                      ? pathname.startsWith("/stages/")
-                        ? activeSideButtonClassName
-                        : ""
-                      : pathname === item.href
-                        ? activeSideButtonClassName
+                    isShplNavItemActive(pathname, item.href)
+                      ? activeSideButtonClassName
                         : ""
                   }`}
                   href={item.href}
                 >
-                  {item.label}
+                  {item.icon}
                 </Link>
               ))}
+              <button
+                className={sideButtonClassName}
+                onClick={() => {
+                  router.push("/menu");
+                  router.refresh();
+                }}
+                type="button"
+              >
+                S
+              </button>
             </div>
           </div>
         </aside>
@@ -1101,14 +1164,14 @@ export function StageSetupScreen({
                     <button className={compactActionButtonClassName} disabled={stageClosedAt !== null} onClick={handleConfirmBothBuyIns} type="button">
                       Buy-in dos dois
                     </button>
-                    <button className={compactActionButtonClassName} disabled={stageClosedAt !== null || currentMatchClosed} onClick={handlePlayerOutFromMatch} type="button">
-                      Eliminar
-                    </button>
                     <button className={compactActionButtonClassName} disabled={stageClosedAt !== null} onClick={handleLeaveStage} type="button">
                       Sair da etapa
                     </button>
-                    <button className={compactActionButtonClassName} disabled={stageClosedAt !== null || currentMatchClosed} onClick={handlePlayerOutFromMatch} type="button">
-                      Fora da partida
+                    <button className={compactActionButtonClassName} disabled={!canMarkSelectedPlayerOut} onClick={handlePlayerOutFromMatch} type="button">
+                      Saiu da partida
+                    </button>
+                    <button className={compactActionButtonClassName} disabled={playerActionHistory.length === 0} onClick={handleUndoLastAction} type="button">
+                      Desfazer ultima acao
                     </button>
                   </div>
 
@@ -1366,7 +1429,7 @@ function buildPlayerStatus(player: StagePlayerControl) {
   }
 
   if (player.outOfCurrentMatch) {
-    return "Perdeu ou saiu da partida atual";
+    return "Saiu da partida atual";
   }
 
   if (player.dailyPaid) {
@@ -1424,22 +1487,6 @@ function buildBlindLabel(level: BlindLevel) {
   return level.ante && level.ante > 0
     ? `${level.smallBlind}/${level.bigBlind}/${level.ante}`
     : `${level.smallBlind}/${level.bigBlind}`;
-}
-
-function calculateDayMatchPoints(finalPosition: number) {
-  if (finalPosition === 1) {
-    return 10;
-  }
-
-  if (finalPosition === 2) {
-    return 7;
-  }
-
-  if (finalPosition === 3) {
-    return 5;
-  }
-
-  return 3;
 }
 
 function formatClock(totalSeconds: number) {
