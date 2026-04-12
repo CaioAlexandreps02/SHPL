@@ -1,7 +1,16 @@
 import Image from "next/image";
-import { LoginScreen } from "@/components/login-screen";
+import { redirect } from "next/navigation";
 
-export default function LoginPage() {
+import { LoginScreen } from "@/components/login-screen";
+import { getCurrentUserAccess } from "@/lib/auth/access";
+
+export default async function LoginPage() {
+  const access = await getCurrentUserAccess();
+
+  if (access) {
+    redirect("/menu");
+  }
+
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top,#11442f_0%,#082017_38%,#04120d_72%,#020a07_100%)] px-4 py-8">
       <div className="pointer-events-none absolute inset-0 opacity-80">

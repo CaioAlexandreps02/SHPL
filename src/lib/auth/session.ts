@@ -1,4 +1,5 @@
 export const AUTH_COOKIE = "shpl_session";
+export const AUTH_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 export function createSessionValue(email: string) {
   return Buffer.from(
@@ -18,4 +19,14 @@ export function readSessionValue(value: string) {
   } catch {
     return null;
   }
+}
+
+export function getAuthCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: AUTH_SESSION_MAX_AGE_SECONDS,
+  };
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createDemoUser } from "@/lib/auth/demo-users";
-import { createSessionValue, AUTH_COOKIE } from "@/lib/auth/session";
+import { createSessionValue, AUTH_COOKIE, getAuthCookieOptions } from "@/lib/auth/session";
 import { createServerSupabaseClient, hasSupabaseServerEnv } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
@@ -57,12 +57,7 @@ export async function POST(request: Request) {
   }
 
   const response = NextResponse.json({ success: true });
-  response.cookies.set(AUTH_COOKIE, createSessionValue(email), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false,
-    path: "/",
-  });
+  response.cookies.set(AUTH_COOKIE, createSessionValue(email), getAuthCookieOptions());
 
   return response;
 }

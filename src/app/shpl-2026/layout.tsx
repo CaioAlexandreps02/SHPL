@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
 
 import { SHPLSidebar } from "@/components/shpl-sidebar";
 import { UserProfileFab } from "@/components/user-profile-fab";
@@ -11,6 +12,10 @@ export default async function SHPL2026Layout({
 }) {
   const access = await getCurrentUserAccess();
 
+  if (!access) {
+    redirect("/login");
+  }
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#11442f_0%,#082017_38%,#04120d_72%,#020a07_100%)] px-4 py-6">
       <UserProfileFab />
@@ -21,7 +26,7 @@ export default async function SHPL2026Layout({
       </div>
 
       <div className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 xl:flex-row">
-        <SHPLSidebar roles={access?.roles ?? ["Visitante"]} />
+        <SHPLSidebar roles={access.roles} />
         <div className="min-w-0 flex-1 xl:pt-5">{children}</div>
       </div>
     </main>

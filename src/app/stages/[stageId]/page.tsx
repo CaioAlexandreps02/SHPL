@@ -14,6 +14,10 @@ type StagePageProps = {
 export default async function StagePage({ params }: StagePageProps) {
   const access = await getCurrentUserAccess();
 
+  if (!access) {
+    redirect("/login");
+  }
+
   if (!canManageTable(access)) {
     redirect("/shpl-2026/etapas");
   }
@@ -36,7 +40,7 @@ export default async function StagePage({ params }: StagePageProps) {
     <>
       <UserProfileFab />
       <StageSetupScreen
-        roles={access?.roles ?? ["Visitante"]}
+        roles={access.roles}
         snapshot={snapshot}
         stage={selectedStage}
       />

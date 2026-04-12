@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getUserAccessFromCookieHeader } from "@/lib/auth/access";
 import { getDemoUserByEmail, updateDemoUserProfile } from "@/lib/auth/demo-users";
-import { AUTH_COOKIE, createSessionValue } from "@/lib/auth/session";
+import { AUTH_COOKIE, createSessionValue, getAuthCookieOptions } from "@/lib/auth/session";
 import { resolveParticipantAccessByEmail } from "@/lib/data/demo-admin-store";
 import { hasSupabaseServerEnv } from "@/lib/supabase/server";
 
@@ -76,10 +76,7 @@ export async function PUT(request: Request) {
     });
 
     response.cookies.set(AUTH_COOKIE, createSessionValue(updatedUser.email), {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: false,
-      path: "/",
+      ...getAuthCookieOptions(),
     });
 
     return response;

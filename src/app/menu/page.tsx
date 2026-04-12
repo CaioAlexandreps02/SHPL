@@ -1,5 +1,14 @@
-import { MainMenuV2 } from "@/components/main-menu-v2";
+import { redirect } from "next/navigation";
 
-export default function MenuPage() {
+import { MainMenuV2 } from "@/components/main-menu-v2";
+import { getCurrentUserAccess } from "@/lib/auth/access";
+
+export default async function MenuPage() {
+  const access = await getCurrentUserAccess();
+
+  if (!access) {
+    redirect("/login");
+  }
+
   return <MainMenuV2 />;
 }
