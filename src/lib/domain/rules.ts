@@ -9,9 +9,10 @@ import type {
 
 export function calculateMatchPoints(position: number) {
   if (position === 1) return 10;
-  if (position === 2) return 7;
-  if (position === 3) return 5;
-  return 3;
+  if (position === 2) return 8;
+  if (position === 3) return 6;
+  if (position === 4) return 4;
+  return 2;
 }
 
 export function calculateAnnualStagePoints(position: number, leftEarly: boolean) {
@@ -55,7 +56,7 @@ export function buildDayRanking(players: Player[], matches: Match[]): RankingEnt
 
   return [...statsMap.values()]
     .filter((entry) => entry.points > 0 || finishedMatches.length === 0)
-    .sort(compareRanking)
+    .sort(compareStageRanking)
     .map((entry, index) => ({ ...entry, position: index + 1 }));
 }
 
@@ -159,6 +160,16 @@ function compareRanking(a: RankingEntry, b: RankingEntry) {
   return (
     b.points - a.points ||
     b.wins - a.wins ||
+    b.secondPlaces - a.secondPlaces ||
+    b.thirdPlaces - a.thirdPlaces ||
+    a.playerName.localeCompare(b.playerName)
+  );
+}
+
+export function compareStageRanking(a: RankingEntry, b: RankingEntry) {
+  return (
+    b.wins - a.wins ||
+    b.points - a.points ||
     b.secondPlaces - a.secondPlaces ||
     b.thirdPlaces - a.thirdPlaces ||
     a.playerName.localeCompare(b.playerName)

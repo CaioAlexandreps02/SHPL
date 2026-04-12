@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import type { AccessRole } from "@/lib/auth/access";
+import { compareStageRanking } from "@/lib/domain/rules";
 import type { BlindLevel, LeagueSnapshot, Stage } from "@/lib/domain/types";
 import {
   LIVE_LAB_TOTAL_TABLE_SEATS,
@@ -349,18 +350,41 @@ export function StageSetupScreen({
       players
         .map((player) => {
           const totalPoints = player.matchPoints.reduce((total, value) => total + value, 0);
+          const wins = player.matchPoints.filter((value) => value === 10).length;
+          const secondPlaces = player.matchPoints.filter((value) => value === 8).length;
+          const thirdPlaces = player.matchPoints.filter((value) => value === 6).length;
           return {
             ...player,
             totalPoints,
+            wins,
+            secondPlaces,
+            thirdPlaces,
           };
         })
-        .sort((left, right) => {
-          if (right.totalPoints !== left.totalPoints) {
-            return right.totalPoints - left.totalPoints;
-          }
-
-          return left.playerName.localeCompare(right.playerName, "pt-BR");
-        }),
+        .sort((left, right) =>
+          compareStageRanking(
+            {
+              playerId: left.playerId,
+              playerName: left.playerName,
+              position: 0,
+              points: left.totalPoints,
+              wins: left.wins,
+              secondPlaces: left.secondPlaces,
+              thirdPlaces: left.thirdPlaces,
+              tiebreakSummary: "",
+            },
+            {
+              playerId: right.playerId,
+              playerName: right.playerName,
+              position: 0,
+              points: right.totalPoints,
+              wins: right.wins,
+              secondPlaces: right.secondPlaces,
+              thirdPlaces: right.thirdPlaces,
+              tiebreakSummary: "",
+            }
+          )
+        ),
     [players]
   );
 

@@ -457,10 +457,25 @@ function buildFinalRanking(
       playerId: player.playerId,
       playerName: playerNameById.get(player.playerId) ?? player.playerName,
       totalPoints: player.matchPoints.reduce((total, value) => total + value, 0),
+      wins: player.matchPoints.filter((value) => value === 10).length,
+      secondPlaces: player.matchPoints.filter((value) => value === 8).length,
+      thirdPlaces: player.matchPoints.filter((value) => value === 6).length,
     }))
     .sort((left, right) => {
+      if (right.wins !== left.wins) {
+        return right.wins - left.wins;
+      }
+
       if (right.totalPoints !== left.totalPoints) {
         return right.totalPoints - left.totalPoints;
+      }
+
+      if (right.secondPlaces !== left.secondPlaces) {
+        return right.secondPlaces - left.secondPlaces;
+      }
+
+      if (right.thirdPlaces !== left.thirdPlaces) {
+        return right.thirdPlaces - left.thirdPlaces;
       }
 
       return left.playerName.localeCompare(right.playerName, "pt-BR");

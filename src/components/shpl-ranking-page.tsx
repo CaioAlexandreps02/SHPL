@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { SHPLAnnualClassification } from "@/components/shpl-annual-classification";
 import { PlayerAvatar } from "@/components/player-avatar";
+import { compareStageRanking } from "@/lib/domain/rules";
 import type { LeagueSnapshot } from "@/lib/domain/types";
 
 export function SHPLRankingPage({
@@ -40,16 +41,42 @@ export function SHPLRankingPage({
           matchPoints: selectedStageMatches.matches.map(
             (match) => match.pointsByPlayer[entry.playerId] ?? 0
           ),
+          wins: selectedStageMatches.matches.filter(
+            (match) => (match.pointsByPlayer[entry.playerId] ?? 0) === 10
+          ).length,
+          secondPlaces: selectedStageMatches.matches.filter(
+            (match) => (match.pointsByPlayer[entry.playerId] ?? 0) === 8
+          ).length,
+          thirdPlaces: selectedStageMatches.matches.filter(
+            (match) => (match.pointsByPlayer[entry.playerId] ?? 0) === 6
+          ).length,
           totalPoints,
         };
       })
-      .sort((left, right) => {
-        if (right.totalPoints !== left.totalPoints) {
-          return right.totalPoints - left.totalPoints;
-        }
-
-        return left.playerName.localeCompare(right.playerName, "pt-BR");
-      })
+      .sort((left, right) =>
+        compareStageRanking(
+          {
+            playerId: left.playerId,
+            playerName: left.playerName,
+            position: 0,
+            points: left.totalPoints,
+            wins: left.wins,
+            secondPlaces: left.secondPlaces,
+            thirdPlaces: left.thirdPlaces,
+            tiebreakSummary: "",
+          },
+          {
+            playerId: right.playerId,
+            playerName: right.playerName,
+            position: 0,
+            points: right.totalPoints,
+            wins: right.wins,
+            secondPlaces: right.secondPlaces,
+            thirdPlaces: right.thirdPlaces,
+            tiebreakSummary: "",
+          }
+        )
+      )
       .map((entry, index) => ({
         ...entry,
         position: index + 1,

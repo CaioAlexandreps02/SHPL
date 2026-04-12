@@ -183,13 +183,18 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
         {stages.map((stage, index) => (
           <article
             key={stage.id}
-            className="grid gap-4 rounded-[1.3rem] border border-[rgba(255,208,101,0.12)] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-center"
+            className="grid cursor-pointer gap-4 rounded-[1.3rem] border border-[rgba(255,208,101,0.12)] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4 transition hover:border-[rgba(255,208,101,0.22)] hover:bg-[rgba(255,255,255,0.05)] md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-center"
+            onClick={() => handleOpenStage(stage)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                handleOpenStage(stage);
+              }
+            }}
+            role="button"
+            tabIndex={0}
           >
-            <button
-              className="flex min-w-0 items-center gap-4 text-left"
-              onClick={() => handleOpenStage(stage)}
-              type="button"
-            >
+            <div className="flex min-w-0 items-center gap-4 text-left">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,#ffcf46_0%,#d8970a_100%)] text-base font-black text-[#2a1a00]">
                 {index + 1}
               </span>
@@ -205,7 +210,7 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
                   {stage.stageDateLabel}
                 </p>
               </div>
-            </button>
+            </div>
 
             <div>
               <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getStageStatusClassName(stage.status)}`}>
@@ -215,7 +220,10 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
 
             <button
               className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.18)] bg-[rgba(255,255,255,0.03)] px-4 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.06)]"
-              onClick={() => handleOpenEditStage(stage)}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleOpenEditStage(stage);
+              }}
               type="button"
             >
               Editar etapa
