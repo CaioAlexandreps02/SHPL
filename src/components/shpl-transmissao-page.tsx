@@ -35,9 +35,10 @@ export function SHPLTransmissaoPage({
     [selectedStageId, stageOptions],
   );
 
-  function handleOpenSelectedStage() {
+  function handleSelectStage(nextStageId: string) {
+    setDraftStageId(nextStageId);
     const nextParams = new URLSearchParams(searchParams.toString());
-    nextParams.set("stage", draftStageId);
+    nextParams.set("stage", nextStageId);
     router.push(`${pathname}?${nextParams.toString()}`);
   }
 
@@ -53,35 +54,28 @@ export function SHPLTransmissaoPage({
               Escolha a etapa da live
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-[rgba(237,226,197,0.72)] md:text-base">
-              A transmissao agora nasce vinculada a uma etapa especifica. Isso faz a captura, o TXT e a administracao herdarem corretamente a etapa, o blind e o contexto da mesa.
+              A transmissao nasce vinculada a uma etapa em aberto. Isso faz a captura, o TXT e a
+              administracao herdarem corretamente a etapa, o blind e o contexto da mesa.
             </p>
           </div>
 
-          <div className="grid w-full gap-3 xl:max-w-xl xl:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="grid w-full gap-3 xl:max-w-xl">
             <label className="grid gap-2">
               <span className="text-[0.72rem] uppercase tracking-[0.2em] text-[rgba(240,227,189,0.48)]">
                 Etapa vinculada
               </span>
               <select
                 className="h-12 rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none"
-                onChange={(event) => setDraftStageId(event.target.value)}
+                onChange={(event) => handleSelectStage(event.target.value)}
                 value={draftStageId}
               >
                 {stageOptions.map((option) => (
                   <option key={option.stageId} value={option.stageId}>
-                    {option.stageTitle} · {option.stageDateLabel}
+                    {option.stageTitle} - {option.stageDateLabel}
                   </option>
                 ))}
               </select>
             </label>
-
-            <button
-              className="h-12 rounded-[0.95rem] border border-[rgba(255,208,101,0.22)] bg-[linear-gradient(180deg,#ffd54e_0%,#c88807_100%)] px-5 text-sm font-semibold text-[#2a1a00]"
-              onClick={handleOpenSelectedStage}
-              type="button"
-            >
-              Abrir transmissao da etapa
-            </button>
           </div>
         </div>
 
@@ -89,7 +83,10 @@ export function SHPLTransmissaoPage({
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             <SummaryCard label="Etapa selecionada" value={selectedStageSummary.stageTitle} />
             <SummaryCard label="Data" value={selectedStageSummary.stageDateLabel} />
-            <SummaryCard label="Status do vinculo" value={linkedStageOption ? "pronto para transmitir" : "aguardando contexto"} />
+            <SummaryCard
+              label="Status do vinculo"
+              value={linkedStageOption ? "pronto para transmitir" : "aguardando contexto"}
+            />
           </div>
         ) : null}
       </section>

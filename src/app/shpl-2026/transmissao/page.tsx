@@ -70,11 +70,9 @@ function buildTransmissionStageOptions(snapshot: LeagueSnapshot) {
   );
 
   snapshot.upcomingStages.forEach((stage) => {
-    register(stage.id, stage.title, stage.stageDateLabel);
-  });
-
-  snapshot.history.forEach((stage) => {
-    register(stage.id, stage.title, stage.stageDateLabel);
+    if (stage.status !== "finished") {
+      register(stage.id, stage.title, stage.stageDateLabel);
+    }
   });
 
   return Array.from(optionMap.values());

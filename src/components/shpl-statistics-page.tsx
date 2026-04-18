@@ -10,6 +10,7 @@ import {
   type SimulatedAction,
   type SimulationSeatAssignment,
 } from "@/lib/live-lab/hand-simulation";
+import { STATISTICS_SAMPLE_SESSION } from "@/lib/live-lab/statistics-sample-session";
 import { inferPlayerProfile, accumulatePlayerStatistics } from "@/lib/poker/statistics";
 import type {
   PokerPlayerHandStatistics,
@@ -79,7 +80,10 @@ export function SHPLStatisticsPage({ snapshot }: { snapshot: LeagueSnapshot }) {
       try {
         setIsLoadingSessions(true);
         const savedTranscriptRecords = await listSavedTranscripts();
-        const parsedSessions = parseTranscriptSessions(savedTranscriptRecords);
+        const parsedSessions = parseTranscriptSessions([
+          STATISTICS_SAMPLE_SESSION,
+          ...savedTranscriptRecords,
+        ]);
 
         if (!isMounted) {
           return;

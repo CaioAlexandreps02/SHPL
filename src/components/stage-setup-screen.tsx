@@ -789,6 +789,27 @@ export function StageSetupScreen({
     );
   }
 
+  function handleSuggestedStackChange(value: string) {
+    const digitsOnly = value.replace(/[^\d]/g, "");
+    setAverageStack(digitsOnly || "0");
+  }
+
+  function applySuggestedStackToEligiblePlayers() {
+    const nextSuggestedStack = Math.max(Number.parseInt(averageStack || "0", 10) || 0, 0);
+
+    setPlayers((currentPlayers) =>
+      currentPlayers.map((player) =>
+        player.annualPaid && player.dailyPaid && !player.leftStage
+          ? {
+              ...player,
+              estimatedStack: nextSuggestedStack,
+            }
+          : player
+      )
+    );
+    setStageNotice("Stack sugerido aplicado aos jogadores aptos da mesa.");
+  }
+
   function toggleActionClock() {
     setActionClockRemaining((currentValue) => (currentValue === null ? clockSeconds : null));
   }
@@ -1223,6 +1244,12 @@ export function StageSetupScreen({
                 >
                   Encerrar etapa
                 </button>
+                <Link
+                  className="rounded-[0.95rem] border border-[rgba(129,196,255,0.24)] bg-[rgba(129,196,255,0.1)] px-4 py-3 text-sm font-semibold text-[rgba(220,239,255,0.96)] transition hover:bg-[rgba(129,196,255,0.16)]"
+                  href={`/shpl-2026/transmissao?stage=${stage.id}`}
+                >
+                  Abrir transmissao
+                </Link>
               </div>
             </div>
           </div>
@@ -1373,8 +1400,8 @@ export function StageSetupScreen({
           </section>
 
           <section className="mt-5 rounded-[1.55rem] border border-[rgba(255,208,101,0.16)] bg-[linear-gradient(180deg,rgba(12,44,31,0.98),rgba(7,24,18,0.99))] p-5 shadow-[0_28px_60px_rgba(0,0,0,0.28)] md:p-6">
-            <div className="flex flex-col gap-4 border-b border-[rgba(255,208,101,0.1)] pb-4 md:flex-row md:items-start md:justify-between">
-              <div>
+              <div className="flex flex-col gap-4 border-b border-[rgba(255,208,101,0.1)] pb-4 md:flex-row md:items-start md:justify-between">
+                <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-[rgba(236,225,196,0.48)]">
                   Mesa
                 </p>
@@ -1403,27 +1430,13 @@ export function StageSetupScreen({
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {Array.from({ length: TOTAL_TABLE_SEATS }, (_, seatIndex) => {
-                const assignedSeat = assignedEligibleSeatEntries.find((entry) => entry.seatIndex === seatIndex);
-
-                return (
-                  <div
-                    key={`seat-card-${seatIndex + 1}`}
-                    className="rounded-[1.15rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4"
-                  >
-                    <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
-                      Lugar {seatIndex + 1}
-                    </p>
-                    <p className="mt-2 text-lg font-semibold text-[rgba(255,244,214,0.96)]">
-                      {assignedSeat?.playerName ?? "Vazio"}
-                    </p>
-                    <p className="mt-1 text-sm text-[rgba(236,225,196,0.62)]">
-                      {assignedSeat ? "Jogador definido para esta posicao." : "Nenhum jogador atribuido."}
-                    </p>
-                  </div>
-                );
-              })}
+              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <TableSeatMap
+                seatAssignments={seatAssignments}
+                seatLabelsByPlayerId={Object.fromEntries(
+                  eligibleStagePlayers.map((player) => [player.playerId, player.playerName])
+                )}
+              />
             </div>
 
             {missingSeatPlayers.length > 0 ? (
@@ -1435,11 +1448,33 @@ export function StageSetupScreen({
 
             <div className="mt-6 border-t border-[rgba(255,208,101,0.1)] pt-5">
               <div className="grid gap-4 md:grid-cols-3">
-                <InfoTile
-                  label="Stack sugerido"
-                  value={formatStackValue(Math.max(Number.parseInt(averageStack || "0", 10) || 0, 0))}
-                  helper="valor base vindo das configuracoes"
-                />
+                <div className="rounded-[1.15rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] p-4">
+                  <p className="text-[0.72rem] uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                    Stack sugerido
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-[rgba(255,244,214,0.96)]">
+                    {formatStackValue(Math.max(Number.parseInt(averageStack || "0", 10) || 0, 0))}
+                  </p>
+                  <p className="mt-1 text-sm text-[rgba(236,225,196,0.62)]">
+                    valor base que veio das configuracoes, mas pode ser redefinido aqui
+                  </p>
+                  <div className="mt-4 flex flex-col gap-3">
+                    <input
+                      className="h-11 w-full rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none placeholder:text-[rgba(236,225,196,0.4)]"
+                      inputMode="numeric"
+                      onChange={(event) => handleSuggestedStackChange(event.target.value)}
+                      type="number"
+                      value={averageStack}
+                    />
+                    <button
+                      className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.18)] bg-[rgba(255,183,32,0.12)] px-4 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,183,32,0.18)]"
+                      onClick={applySuggestedStackToEligiblePlayers}
+                      type="button"
+                    >
+                      Aplicar sugestao aos jogadores aptos
+                    </button>
+                  </div>
+                </div>
                 <InfoTile
                   label="Fichas estimadas na etapa"
                   value={formatStackValue(estimatedStageChips)}
@@ -1529,37 +1564,14 @@ export function StageSetupScreen({
               </p>
 
               <div className="relative mt-6 flex min-h-[430px] items-center justify-center overflow-hidden rounded-[1.7rem] border border-[rgba(255,208,101,0.14)] bg-[radial-gradient(circle_at_center,rgba(23,92,58,0.72),rgba(7,24,18,0.98)_72%)]">
-                <div className="absolute h-[62%] w-[72%] rounded-full border-[3px] border-[rgba(255,208,101,0.22)] bg-[radial-gradient(circle_at_center,rgba(20,92,57,0.8),rgba(8,34,24,0.96)_70%)] shadow-[inset_0_0_0_1px_rgba(255,208,101,0.06)]" />
-                <div className="absolute h-[46%] w-[52%] rounded-full border border-[rgba(255,208,101,0.12)] bg-[rgba(5,15,11,0.34)]" />
-
-                {normalizeSeatAssignments(draftSeatAssignments).map((playerId, seatIndex) => {
-                  const seatPosition = getSeatPosition(seatIndex);
-                  const assignedPlayer = eligibleStagePlayers.find(
-                    (player) => player.playerId === playerId
-                  );
-                  const isSelected = selectedSeatIndex === seatIndex;
-
-                  return (
-                    <button
-                      key={`seat-${seatIndex + 1}`}
-                      className={`absolute flex h-[84px] w-[124px] flex-col items-center justify-center rounded-[1.1rem] border px-3 py-3 text-center shadow-[0_14px_28px_rgba(0,0,0,0.22)] transition ${
-                        isSelected
-                          ? "border-[rgba(255,208,101,0.42)] bg-[rgba(255,183,32,0.14)]"
-                          : "border-[rgba(255,208,101,0.16)] bg-[rgba(7,24,18,0.9)]"
-                      }`}
-                      onClick={() => setSelectedSeatIndex(seatIndex)}
-                      style={seatPosition}
-                      type="button"
-                    >
-                      <span className="text-[0.66rem] uppercase tracking-[0.18em] text-[rgba(236,225,196,0.54)]">
-                        Lugar {seatIndex + 1}
-                      </span>
-                      <span className="mt-2 text-sm font-semibold text-[rgba(255,244,214,0.96)]">
-                        {assignedPlayer?.playerName ?? "Selecionar"}
-                      </span>
-                    </button>
-                  );
-                })}
+                <TableSeatMap
+                  highlightedSeatIndex={selectedSeatIndex}
+                  onSeatClick={setSelectedSeatIndex}
+                  seatAssignments={draftSeatAssignments}
+                  seatLabelsByPlayerId={Object.fromEntries(
+                    eligibleStagePlayers.map((player) => [player.playerId, player.playerName])
+                  )}
+                />
               </div>
             </div>
 
@@ -1763,6 +1775,53 @@ function getSeatPosition(seatIndex: number) {
   ] as const;
 
   return positions[seatIndex] ?? positions[0];
+}
+
+function TableSeatMap({
+  highlightedSeatIndex,
+  onSeatClick,
+  seatAssignments,
+  seatLabelsByPlayerId,
+}: {
+  highlightedSeatIndex?: number | null;
+  onSeatClick?: (seatIndex: number) => void;
+  seatAssignments: Array<string | null>;
+  seatLabelsByPlayerId: Record<string, string>;
+}) {
+  return (
+    <div className="relative mt-6 flex min-h-[430px] items-center justify-center overflow-hidden rounded-[1.7rem] border border-[rgba(255,208,101,0.14)] bg-[radial-gradient(circle_at_center,rgba(23,92,58,0.72),rgba(7,24,18,0.98)_72%)]">
+      <div className="absolute h-[62%] w-[72%] rounded-full border-[3px] border-[rgba(255,208,101,0.22)] bg-[radial-gradient(circle_at_center,rgba(20,92,57,0.8),rgba(8,34,24,0.96)_70%)] shadow-[inset_0_0_0_1px_rgba(255,208,101,0.06)]" />
+      <div className="absolute h-[46%] w-[52%] rounded-full border border-[rgba(255,208,101,0.12)] bg-[rgba(5,15,11,0.34)]" />
+
+      {normalizeSeatAssignments(seatAssignments).map((playerId, seatIndex) => {
+        const seatPosition = getSeatPosition(seatIndex);
+        const playerName = playerId ? seatLabelsByPlayerId[playerId] ?? "Selecionar" : "Selecionar";
+        const isSelected = highlightedSeatIndex === seatIndex;
+        const Component = onSeatClick ? "button" : "div";
+
+        return (
+          <Component
+            key={`seat-map-${seatIndex + 1}`}
+            className={`absolute flex h-[84px] w-[124px] flex-col items-center justify-center rounded-[1.1rem] border px-3 py-3 text-center shadow-[0_14px_28px_rgba(0,0,0,0.22)] transition ${
+              isSelected
+                ? "border-[rgba(255,208,101,0.42)] bg-[rgba(255,183,32,0.14)]"
+                : "border-[rgba(255,208,101,0.16)] bg-[rgba(7,24,18,0.9)]"
+            } ${onSeatClick ? "hover:border-[rgba(255,208,101,0.3)]" : ""}`}
+            onClick={onSeatClick ? () => onSeatClick(seatIndex) : undefined}
+            style={seatPosition}
+            type={onSeatClick ? "button" : undefined}
+          >
+            <span className="text-[0.66rem] uppercase tracking-[0.18em] text-[rgba(236,225,196,0.54)]">
+              Lugar {seatIndex + 1}
+            </span>
+            <span className="mt-2 text-sm font-semibold text-[rgba(255,244,214,0.96)]">
+              {playerName}
+            </span>
+          </Component>
+        );
+      })}
+    </div>
+  );
 }
 
 function buildBlindLabel(level: BlindLevel) {
