@@ -249,6 +249,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   const recentTranscriptSignaturesRef = useRef<Array<{ key: string; at: number }>>([]);
   const boardRegionRef = useRef<BoardRegion>(defaultBoardRegion);
   const latestBoardDetectionRef = useRef<BoardDetectionResult | null>(null);
+  const previousLinkedStageContextRef = useRef<LiveLinkedStageContext | null>(null);
   const hasAttemptedAutoPreviewRef = useRef(false);
   const hasHydratedSettingsRef = useRef(false);
   const startPreviewRef = useRef<null | (() => Promise<void>)>(null);
@@ -340,6 +341,49 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         void element.play().catch(() => undefined);
       }
     }
+  }
+
+  async function syncPreviewElementsWithStream(stream: MediaStream | null) {
+    const syncElement = async (element: HTMLVideoElement | null) => {
+      if (!element) {
+        return;
+      }
+
+      element.muted = true;
+      element.playsInline = true;
+      element.autoplay = true;
+
+      if (element.srcObject !== stream) {
+        element.srcObject = stream;
+      }
+
+      if (!stream) {
+        element.load();
+        return;
+      }
+
+      const tryPlay = async () => {
+        try {
+          await element.play();
+        } catch {
+          // Alguns navegadores precisam de metadata pronta antes de tocar.
+        }
+      };
+
+      if (element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        await tryPlay();
+        return;
+      }
+
+      const onLoadedMetadata = () => {
+        void tryPlay();
+      };
+
+      element.addEventListener("loadedmetadata", onLoadedMetadata, { once: true });
+      await tryPlay();
+    };
+
+    await Promise.all([syncElement(videoRef.current), syncElement(adminVideoRef.current)]);
   }
 
   function clearRemotePreviewStream() {
@@ -699,10 +743,6 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   }, [selectedAudioDeviceId, selectedVideoDeviceId]);
 
   useEffect(() => {
-    if (!boardFeaturesEnabled) {
-      return;
-    }
-
     if (typeof window === "undefined") {
       return;
     }
@@ -1008,6 +1048,9 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     }
 
     refreshLinkedStageContext();
+    const intervalId = window.setInterval(() => {
+      refreshLinkedStageContext();
+    }, 1500);
 
     function handleStorage(event: StorageEvent) {
       if (!linkedStageOption) {
@@ -1022,9 +1065,53 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     window.addEventListener("storage", handleStorage);
 
     return () => {
+      window.clearInterval(intervalId);
       window.removeEventListener("storage", handleStorage);
     };
   }, [integratedMode, linkedStageOption, refreshLinkedStageContext]);
+
+  useEffect(() => {
+    if (!integratedMode || !linkedStageContext) {
+      previousLinkedStageContextRef.current = linkedStageContext;
+      return;
+    }
+
+    const previousContext = previousLinkedStageContextRef.current;
+    previousLinkedStageContextRef.current = linkedStageContext;
+
+    if (!previousContext) {
+      return;
+    }
+
+    if (
+      liveSessionStatusRef.current !== "running" ||
+      !sessionTranscriptStartedAtRef.current
+    ) {
+      return;
+    }
+
+    const previousSeatMap = new Map(
+      previousContext.seatAssignments.map((seat) => [seat.seatIndex, seat.playerName ?? ""])
+    );
+
+    linkedStageContext.seatAssignments.forEach((seat) => {
+      const previousPlayerName = previousSeatMap.get(seat.seatIndex) ?? "";
+      const nextPlayerName = seat.playerName ?? "";
+
+      if (previousPlayerName === nextPlayerName) {
+        return;
+      }
+
+      if (nextPlayerName) {
+        appendSessionTranscriptLine(
+          `Sistema: Lugar ${seat.seatIndex + 1} atualizado para ${nextPlayerName}`,
+        );
+        return;
+      }
+
+      appendSessionTranscriptLine(`Sistema: Lugar ${seat.seatIndex + 1} ficou vazio`);
+    });
+  }, [integratedMode, linkedStageContext]);
 
   useEffect(() => {
     if (
@@ -1405,11 +1492,11 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
   const linkedMatchLabel = useMemo(() => {
     if (!linkedStageContext) {
-      return "Sem vinculo";
+      return linkedStageOption ? "Partida aguardando mesa" : "Sem vinculo";
     }
 
     return `Partida ${linkedStageContext.currentMatchNumber}`;
-  }, [linkedStageContext]);
+  }, [linkedStageContext, linkedStageOption]);
 
   const linkedSeatSummaries = useMemo(() => {
     if (!linkedStageContext) {
@@ -1418,8 +1505,13 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
     return linkedStageContext.seatAssignments.filter((seat) => Boolean(seat.playerName));
   }, [linkedStageContext]);
-  const linkedBlindLabel = linkedStageContext?.currentBlindLabel ?? "Blind indisponivel";
-  const linkedStageTitle = linkedStageContext?.stageTitle ?? "Nenhuma etapa vinculada";
+  const linkedBlindLabel =
+    linkedStageContext?.currentBlindLabel ??
+    (linkedStageOption ? "Blind aguardando mesa" : "Blind indisponivel");
+  const linkedStageTitle =
+    linkedStageContext?.stageTitle ??
+    linkedStageOption?.stageTitle ??
+    "Nenhuma etapa vinculada";
 
   const boardCardSummaries = useMemo(() => {
     if (!boardDetection || boardDetection.boxes.length === 0) {
@@ -1527,7 +1619,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         throw new Error("Seu navegador nao suporta captura de camera e microfone.");
       }
 
-      stopStream();
+      await stopLocalPreviewSession();
 
       let nextStream: MediaStream;
 
@@ -1575,18 +1667,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         track.enabled = isAudioEnabled;
       });
 
-      for (const element of [videoRef.current, adminVideoRef.current]) {
-        if (!element) {
-          continue;
-        }
-
-        element.srcObject = nextStream;
-        try {
-          await element.play();
-        } catch {
-          // O stream pode estar valido mesmo que o elemento ainda nao consiga tocar neste frame.
-        }
-      }
+      await syncPreviewElementsWithStream(nextStream);
 
       await loadDevices();
       setCaptureStatus("preview");
@@ -1622,7 +1703,23 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     return Boolean(streamRef.current);
   }
 
-  function stopStream() {
+  async function stopLocalPreviewSession() {
+    await stopLiveSession({ restartBoardMonitor: false });
+    clearRemotePreviewStream();
+
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    await syncPreviewElementsWithStream(null);
+    setCaptureStatus("idle");
+    await broadcastIntegratedState({
+      captureStatus: "idle",
+      liveSessionStatus: liveSessionStatusRef.current,
+      error: "",
+    });
+  }
+
+  async function stopStream() {
     if (isRemoteMonitor) {
       setRemoteBridgeStatus("Enviando comando para a fonte encerrar o preview...");
       void sendLiveRemoteMessage({
@@ -1634,26 +1731,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       return;
     }
 
-    void stopLiveSession({ restartBoardMonitor: false });
-    clearRemotePreviewStream();
-
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    if (adminVideoRef.current) {
-      adminVideoRef.current.srcObject = null;
-    }
-
-    setCaptureStatus("idle");
-    void broadcastIntegratedState({
-      captureStatus: "idle",
-      liveSessionStatus: liveSessionStatusRef.current,
-      error: "",
-    });
+    await stopLocalPreviewSession();
   }
 
   function getSpeechRecognitionConstructor() {
@@ -2089,8 +2167,9 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
           startTrigger: currentHand.startTrigger,
           endTrigger: triggerText,
           transcriptLog: [...currentHand.transcriptLog, triggerText],
-          linkedStageId: linkedStageContext?.stageId ?? null,
-          linkedStageTitle: linkedStageContext?.stageTitle ?? null,
+          linkedStageId: linkedStageContext?.stageId ?? linkedStageOption?.stageId ?? null,
+          linkedStageTitle:
+            linkedStageContext?.stageTitle ?? linkedStageOption?.stageTitle ?? null,
           linkedMatchLabel,
           linkedBlindLabel: linkedStageContext?.currentBlindLabel ?? null,
           blob,
@@ -3408,15 +3487,16 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     }
 
     await saveSessionTranscript({
-      title: linkedStageContext
-        ? `${linkedStageContext.stageTitle} · ${linkedMatchLabel}`
+      title: linkedStageContext || linkedStageOption
+        ? `${linkedStageContext?.stageTitle ?? linkedStageOption?.stageTitle ?? "Sessao"} · ${linkedMatchLabel}`
         : `Sessao ${new Date(startedAt).toLocaleDateString("pt-BR")}`,
       startedAt,
       endedAt: new Date().toISOString(),
       lineCount: lines.length,
       content: lines.join("\n"),
-      linkedStageId: linkedStageContext?.stageId ?? null,
-      linkedStageTitle: linkedStageContext?.stageTitle ?? null,
+      linkedStageId: linkedStageContext?.stageId ?? linkedStageOption?.stageId ?? null,
+      linkedStageTitle:
+        linkedStageContext?.stageTitle ?? linkedStageOption?.stageTitle ?? null,
       linkedMatchLabel,
       linkedBlindLabel: linkedStageContext?.currentBlindLabel ?? null,
     });

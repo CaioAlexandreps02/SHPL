@@ -34,6 +34,8 @@ export type ParsedHandEvent =
       kind: "street";
       street: SimulatedStreet;
       detail: string | null;
+      revealedCards: string[];
+      showdownHands: RevealedShowdownHand[];
       line: ParsedTranscriptLine;
     }
   | {
@@ -96,11 +98,18 @@ export type SimulatedAction = {
   notes: string[];
 };
 
+export type RevealedShowdownHand = {
+  label: string | null;
+  cards: string[];
+};
+
 export type StreetReplay = {
   street: SimulatedStreet;
   title: string;
   announcements: string[];
   actions: SimulatedAction[];
+  revealedCards: string[];
+  showdownHands: RevealedShowdownHand[];
 };
 
 export type HandReplay = {
@@ -226,6 +235,18 @@ export function simulateTranscriptHand(
       sections[event.street].announcements.push(
         event.detail?.trim() ? event.detail : `${STREET_LABELS[event.street]} anunciado por voz.`,
       );
+      if (event.revealedCards.length > 0) {
+        sections[event.street].revealedCards = mergeUniqueValues(
+          sections[event.street].revealedCards,
+          event.revealedCards,
+        );
+      }
+      if (event.showdownHands.length > 0) {
+        sections[event.street].showdownHands = mergeShowdownHands(
+          sections[event.street].showdownHands,
+          event.showdownHands,
+        );
+      }
 
       if (event.street !== currentStreet) {
         currentStreet = event.street;
@@ -460,6 +481,8 @@ function parseTranscriptEvent(line: ParsedTranscriptLine): ParsedHandEvent | nul
       kind: "street",
       street,
       detail: extractStreetDetail(line.content, street),
+      revealedCards: street === "showdown" ? [] : extractCardsFromSpeech(line.content),
+      showdownHands: street === "showdown" ? extractShowdownHands(line.content) : [],
       line,
     };
   }
@@ -789,18 +812,161 @@ function resolvePortugueseNumberToken(token: string) {
 
 function createStreetSections(): Record<SimulatedStreet, StreetReplay> {
   return {
-    preflop: { street: "preflop", title: STREET_LABELS.preflop, announcements: [], actions: [] },
-    flop: { street: "flop", title: STREET_LABELS.flop, announcements: [], actions: [] },
-    turn: { street: "turn", title: STREET_LABELS.turn, announcements: [], actions: [] },
-    river: { street: "river", title: STREET_LABELS.river, announcements: [], actions: [] },
+    preflop: {
+      street: "preflop",
+      title: STREET_LABELS.preflop,
+      announcements: [],
+      actions: [],
+      revealedCards: [],
+      showdownHands: [],
+    },
+    flop: {
+      street: "flop",
+      title: STREET_LABELS.flop,
+      announcements: [],
+      actions: [],
+      revealedCards: [],
+      showdownHands: [],
+    },
+    turn: {
+      street: "turn",
+      title: STREET_LABELS.turn,
+      announcements: [],
+      actions: [],
+      revealedCards: [],
+      showdownHands: [],
+    },
+    river: {
+      street: "river",
+      title: STREET_LABELS.river,
+      announcements: [],
+      actions: [],
+      revealedCards: [],
+      showdownHands: [],
+    },
     showdown: {
       street: "showdown",
       title: STREET_LABELS.showdown,
       announcements: [],
       actions: [],
+      revealedCards: [],
+      showdownHands: [],
     },
   };
 }
+
+function mergeUniqueValues(currentValues: string[], nextValues: string[]) {
+  return Array.from(new Set([...currentValues, ...nextValues]));
+}
+
+function mergeShowdownHands(
+  currentHands: RevealedShowdownHand[],
+  nextHands: RevealedShowdownHand[],
+) {
+  const merged = new Map<string, RevealedShowdownHand>();
+
+  for (const hand of [...currentHands, ...nextHands]) {
+    const key = `${hand.label ?? "sem-label"}::${hand.cards.join("|")}`;
+    merged.set(key, hand);
+  }
+
+  return Array.from(merged.values());
+}
+
+function extractCardsFromSpeech(text: string) {
+  const matches = [...normalizeText(text).matchAll(CARD_MENTION_REGEX)];
+
+  return matches.map((match) => {
+    const rawRank = match[1] ?? "";
+    const rawSuit = match[2] ?? "";
+    const rank = normalizeCardRank(rawRank);
+    const suit = normalizeCardSuit(rawSuit);
+
+    return `${rank} de ${suit}`;
+  });
+}
+
+function extractShowdownHands(text: string) {
+  const normalized = normalizeText(text);
+  const chunks = normalized
+    .split(/\bcontra\b/g)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  return chunks
+    .map<RevealedShowdownHand | null>((chunk) => {
+      const cards = extractCardsFromSpeech(chunk);
+
+      if (cards.length === 0) {
+        return null;
+      }
+
+      const firstCardMatch = chunk.match(CARD_MENTION_REGEX);
+      const label =
+        firstCardMatch && firstCardMatch.index !== undefined
+          ? normalizeShowdownLabel(chunk.slice(0, firstCardMatch.index))
+          : null;
+
+      return {
+        label,
+        cards: cards.slice(0, 2),
+      };
+    })
+    .filter((hand): hand is RevealedShowdownHand => hand !== null);
+}
+
+function normalizeCardRank(value: string) {
+  const rankMap: Record<string, string> = {
+    a: "A",
+    as: "A",
+    rei: "K",
+    dama: "Q",
+    valete: "J",
+    dez: "10",
+    "10": "10",
+    nove: "9",
+    "9": "9",
+    oito: "8",
+    "8": "8",
+    sete: "7",
+    "7": "7",
+    seis: "6",
+    "6": "6",
+    cinco: "5",
+    "5": "5",
+    quatro: "4",
+    "4": "4",
+    tres: "3",
+    "3": "3",
+    dois: "2",
+    "2": "2",
+  };
+
+  return rankMap[value] ?? value.toUpperCase();
+}
+
+function normalizeCardSuit(value: string) {
+  const suitMap: Record<string, string> = {
+    paus: "paus",
+    copas: "copas",
+    espadas: "espadas",
+    ouros: "ouros",
+  };
+
+  return suitMap[value] ?? value;
+}
+
+function normalizeShowdownLabel(value: string) {
+  const cleaned = value
+    .replace(/\b(showdown|virou|vira|foi|com|carta|cartas|e)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+const CARD_MENTION_REGEX =
+  /\b(as|rei|dama|valete|dez|nove|oito|sete|seis|cinco|quatro|tres|dois|10|9|8|7|6|5|4|3|2|a)\b(?:\s+de)?\s+\b(paus|copas|espadas|ouros)\b/g;
 
 function inferActionFromAmountOnly(
   amount: number | null,

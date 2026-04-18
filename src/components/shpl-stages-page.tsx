@@ -64,6 +64,10 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
     router.push(`/stages/${stage.id}`);
   }
 
+  function handleOpenStageTransmission(stage: StageListEntry) {
+    router.push(`/shpl-2026/transmissao?stage=${stage.id}`);
+  }
+
   function handleOpenAddStage() {
     setDraft({
       id: null,
@@ -218,16 +222,28 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
               </span>
             </div>
 
-            <button
-              className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.18)] bg-[rgba(255,255,255,0.03)] px-4 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.06)]"
-              onClick={(event) => {
-                event.stopPropagation();
-                handleOpenEditStage(stage);
-              }}
-              type="button"
-            >
-              Editar etapa
-            </button>
+            <div className="flex flex-col gap-2 md:items-end">
+              <button
+                className="h-11 rounded-[0.95rem] border border-[rgba(129,211,120,0.2)] bg-[rgba(129,211,120,0.1)] px-4 text-sm font-semibold text-[rgba(222,255,221,0.96)] transition hover:bg-[rgba(129,211,120,0.16)]"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleOpenStageTransmission(stage);
+                }}
+                type="button"
+              >
+                Abrir transmissao
+              </button>
+              <button
+                className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.18)] bg-[rgba(255,255,255,0.03)] px-4 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.06)]"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleOpenEditStage(stage);
+                }}
+                type="button"
+              >
+                Editar etapa
+              </button>
+            </div>
           </article>
         ))}
       </div>

@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 
 import type { AccessRole } from "@/lib/auth/roles";
 import { calculateMatchPoints, compareStageRanking } from "@/lib/domain/rules";
@@ -21,6 +22,7 @@ type StagePlayerControl = {
   dailyPaid: boolean;
   leftStage: boolean;
   outOfCurrentMatch: boolean;
+  estimatedStack: number;
   matchPoints: number[];
 };
 
@@ -30,6 +32,7 @@ type PlayerActionSnapshot = {
   currentMatchClosed: boolean;
   completedMatchDurations: number[];
   isRunning: boolean;
+  seatAssignments: Array<string | null>;
 };
 
 const SETTINGS_STORAGE_KEY = "shpl-2026-settings";
@@ -76,7 +79,7 @@ export function StageSetupScreen({
     Array.from({ length: TOTAL_TABLE_SEATS }, () => null)
   );
   const [selectedSeatIndex, setSelectedSeatIndex] = useState(0);
-  const [pendingSeatAction, setPendingSeatAction] = useState<"start-current" | "start-next" | null>(
+  const [pendingSeatAction, setPendingSeatAction] = useState<"start-current" | "start-next" | "manual" | null>(
     null
   );
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(
@@ -92,9 +95,12 @@ export function StageSetupScreen({
       dailyPaid: false,
       leftStage: false,
       outOfCurrentMatch: false,
+      estimatedStack: 3000,
       matchPoints: [0],
     }))
   );
+  const previousLevelIndexRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     let timeoutId: number | undefined;
@@ -128,7 +134,19 @@ export function StageSetupScreen({
             30
         );
         setShowActionClock(parsedSettings.showActionClockOnTable ?? true);
-        setAverageStack(parsedSettings.desiredStack ?? "3000");
+        const nextSuggestedStack = parsedSettings.desiredStack ?? "3000";
+        const nextSuggestedStackNumber = Math.max(
+          Number.parseInt(nextSuggestedStack || "0", 10) || 0,
+          0
+        );
+        setAverageStack(nextSuggestedStack);
+        setPlayers((currentPlayers) =>
+          currentPlayers.map((player) => ({
+            ...player,
+            estimatedStack:
+              player.estimatedStack === 3000 ? nextSuggestedStackNumber : player.estimatedStack,
+          }))
+        );
         setBreakDurationMinutes(
           Math.max(Number.parseInt(parsedSettings.breakDurationMinutes ?? "0", 10) || 0, 0)
         );
@@ -276,6 +294,28 @@ export function StageSetupScreen({
   }, [blindLevels, currentLevelIndex]);
 
   useEffect(() => {
+    if (previousLevelIndexRef.current === null) {
+      previousLevelIndexRef.current = currentLevelIndex;
+      return;
+    }
+
+    if (previousLevelIndexRef.current === currentLevelIndex) {
+      return;
+    }
+
+    previousLevelIndexRef.current = currentLevelIndex;
+    playBlindLevelChangedSignal(audioContextRef);
+
+    const changedLevel = blindLevels[currentLevelIndex];
+
+    if (!changedLevel) {
+      return;
+    }
+
+    announceTableMessage(`Blind atual ${buildBlindAnnouncement(changedLevel)}.`);
+  }, [blindLevels, currentLevelIndex]);
+
+  useEffect(() => {
     if (actionClockRemaining === null) {
       return;
     }
@@ -341,6 +381,60 @@ export function StageSetupScreen({
     () => players.some((player) => (player.matchPoints[currentMatchIndex] ?? 0) > 0),
     [currentMatchIndex, players]
   );
+  const estimatedStageChips = useMemo(
+    () =>
+      eligibleStagePlayers.reduce(
+        (total, player) => total + Math.max(player.estimatedStack || 0, 0),
+        0
+      ),
+    [eligibleStagePlayers]
+  );
+  const averageActiveStack = useMemo(
+    () =>
+      activeMatchPlayers.length > 0
+        ? Math.round(estimatedStageChips / activeMatchPlayers.length)
+        : 0,
+    [activeMatchPlayers.length, estimatedStageChips]
+  );
+  const averageActiveBigBlinds = useMemo(() => {
+    if (!currentLevel?.bigBlind) {
+      return 0;
+    }
+
+    return Math.round(averageActiveStack / currentLevel.bigBlind);
+  }, [averageActiveStack, currentLevel]);
+  const assignedEligibleSeatEntries = useMemo(
+    () =>
+      seatAssignments
+        .map((playerId, seatIndex) => {
+          if (!playerId) {
+            return null;
+          }
+
+          const player = eligibleStagePlayers.find((entry) => entry.playerId === playerId);
+
+          if (!player) {
+            return null;
+          }
+
+          return {
+            seatIndex,
+            playerId,
+            playerName: player.playerName,
+          };
+        })
+        .filter((entry): entry is { seatIndex: number; playerId: string; playerName: string } => Boolean(entry)),
+    [eligibleStagePlayers, seatAssignments]
+  );
+  const missingSeatPlayers = useMemo(
+    () =>
+      eligibleStagePlayers.filter(
+        (player) => !assignedEligibleSeatEntries.some((entry) => entry.playerId === player.playerId)
+      ),
+    [assignedEligibleSeatEntries, eligibleStagePlayers]
+  );
+  const hasCompleteSeatAssignments =
+    eligibleStagePlayers.length > 0 && missingSeatPlayers.length === 0;
   const canMarkSelectedPlayerOut =
     Boolean(selectedPlayer) &&
     !selectedPlayer?.leftStage &&
@@ -454,7 +548,12 @@ export function StageSetupScreen({
       return;
     }
 
-    openSeatSelector("start-current");
+    if (!hasCompleteSeatAssignments) {
+      setStageNotice("Primeiro escolha as posicoes da mesa para todos os jogadores aptos.");
+      return;
+    }
+
+    performStartCurrentMatch();
   }
 
   function handleCloseCurrentMatch() {
@@ -493,7 +592,12 @@ export function StageSetupScreen({
       return;
     }
 
-    openSeatSelector("start-next");
+    if (!hasCompleteSeatAssignments) {
+      setStageNotice("Primeiro escolha as posicoes da mesa para todos os jogadores aptos.");
+      return;
+    }
+
+    performStartNextMatch();
   }
 
   function performStartCurrentMatch() {
@@ -531,7 +635,7 @@ export function StageSetupScreen({
     setIsRunning(true);
   }
 
-  function openSeatSelector(mode: "start-current" | "start-next") {
+  function openSeatSelector(mode: "start-current" | "start-next" | "manual") {
     const eligibleIds = new Set(eligibleStagePlayers.map((player) => player.playerId));
     const nextAssignments = normalizeSeatAssignments(
       seatAssignments.map((playerId) =>
@@ -544,6 +648,10 @@ export function StageSetupScreen({
     setPendingSeatAction(mode);
     setShowSeatSelector(true);
     setStageNotice(null);
+  }
+
+  function handleOpenManualSeatSelector() {
+    openSeatSelector("manual");
   }
 
   function handleSeatAssignmentChange(seatIndex: number, playerId: string) {
@@ -583,13 +691,20 @@ export function StageSetupScreen({
       return;
     }
 
+    pushPlayerActionSnapshot();
     setSeatAssignments(normalizedAssignments);
     setShowSeatSelector(false);
 
     if (pendingSeatAction === "start-next") {
       performStartNextMatch();
-    } else {
+    } else if (pendingSeatAction === "start-current") {
       performStartCurrentMatch();
+    } else {
+      setStageNotice(
+        currentMatchStartedAt && !currentMatchClosed
+          ? "Posicoes da mesa atualizadas e sincronizadas para a partida em andamento."
+          : "Posicoes da mesa atualizadas com sucesso."
+      );
     }
 
     setPendingSeatAction(null);
@@ -621,14 +736,19 @@ export function StageSetupScreen({
         currentMatchClosed,
         completedMatchDurations: structuredClone(completedMatchDurations),
         isRunning,
+        seatAssignments: structuredClone(seatAssignments),
       },
     ]);
   }
 
   function handleConfirmAnnualBuyIn() {
+    const playerName = selectedPlayer?.playerName;
     pushPlayerActionSnapshot();
     updateSelectedPlayer((player) => ({ ...player, annualPaid: true }));
     setStageNotice("Buy-in anual confirmado.");
+    if (playerName) {
+      announceTableMessage(`${playerName} deu buy-in anual.`);
+    }
   }
 
   function handleConfirmDailyBuyIn() {
@@ -637,15 +757,36 @@ export function StageSetupScreen({
       return;
     }
 
+    const playerName = selectedPlayer.playerName;
     pushPlayerActionSnapshot();
     updateSelectedPlayer((player) => ({ ...player, dailyPaid: true }));
     setStageNotice("Buy-in do dia confirmado.");
+    announceTableMessage(`${playerName} deu buy-in do dia.`);
   }
 
   function handleConfirmBothBuyIns() {
+    const playerName = selectedPlayer?.playerName;
     pushPlayerActionSnapshot();
     updateSelectedPlayer((player) => ({ ...player, annualPaid: true, dailyPaid: true }));
     setStageNotice("Buy-in anual e do dia confirmados.");
+    if (playerName) {
+      announceTableMessage(`${playerName} deu buy-in anual e do dia.`);
+    }
+  }
+
+  function handleEstimatedStackChange(playerId: string, value: string) {
+    const nextValue = Math.max(Number.parseInt(value || "0", 10) || 0, 0);
+
+    setPlayers((currentPlayers) =>
+      currentPlayers.map((player) =>
+        player.playerId === playerId
+          ? {
+              ...player,
+              estimatedStack: nextValue,
+            }
+          : player
+      )
+    );
   }
 
   function toggleActionClock() {
@@ -728,10 +869,14 @@ export function StageSetupScreen({
         return [...currentDurations, matchElapsedSeconds];
       });
       setStageNotice(`${winnerName} ficou sozinho na partida e assumiu automaticamente o 1o lugar.`);
+      announceTableMessage(
+        `${selectedPlayer.playerName} saiu da partida. ${winnerName} ficou em primeiro lugar.`
+      );
       return;
     }
 
     setStageNotice(`${selectedPlayer.playerName} saiu da partida atual.`);
+    announceTableMessage(`${selectedPlayer.playerName} saiu da partida.`);
   }
 
   function handleLeaveStage() {
@@ -754,6 +899,7 @@ export function StageSetupScreen({
         })
       );
     setStageNotice(`${selectedPlayer.playerName} saiu da etapa.`);
+    announceTableMessage(`${selectedPlayer.playerName} saiu da etapa.`);
   }
 
   function handleUndoLastAction() {
@@ -770,6 +916,7 @@ export function StageSetupScreen({
       setCurrentMatchClosed(previousSnapshot.currentMatchClosed);
       setCompletedMatchDurations(previousSnapshot.completedMatchDurations);
       setIsRunning(previousSnapshot.isRunning);
+      setSeatAssignments(previousSnapshot.seatAssignments);
       setStageNotice("Ultima acao desfeita.");
       return currentHistory.slice(0, -1);
     });
@@ -1047,7 +1194,10 @@ export function StageSetupScreen({
                     Stack medio
                   </p>
                   <p className="mt-1 text-2xl font-black text-[rgba(255,220,143,0.98)]">
-                    {averageStack}
+                    {formatStackValue(averageActiveStack)}
+                  </p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[rgba(236,225,196,0.48)]">
+                    ~ {averageActiveBigBlinds} BB
                   </p>
                 </div>
               </div>
@@ -1219,6 +1369,119 @@ export function StageSetupScreen({
                   </div>
                 </>
               ) : null}
+            </div>
+          </section>
+
+          <section className="mt-5 rounded-[1.55rem] border border-[rgba(255,208,101,0.16)] bg-[linear-gradient(180deg,rgba(12,44,31,0.98),rgba(7,24,18,0.99))] p-5 shadow-[0_28px_60px_rgba(0,0,0,0.28)] md:p-6">
+            <div className="flex flex-col gap-4 border-b border-[rgba(255,208,101,0.1)] pb-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-[rgba(236,225,196,0.48)]">
+                  Mesa
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold text-[rgba(255,244,214,0.96)]">
+                  Posicoes da mesa
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[rgba(236,225,196,0.7)]">
+                  Defina quem ocupa cada lugar antes de iniciar a partida. Todo jogador com buy-in anual e do dia
+                  confirmados precisa estar em uma posicao da mesa.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 md:items-end">
+                <button
+                  className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.24)] bg-[linear-gradient(180deg,#ffd54e_0%,#c88807_100%)] px-5 text-sm font-black uppercase tracking-[0.14em] text-[#2a1a00] transition hover:brightness-110"
+                  onClick={handleOpenManualSeatSelector}
+                  type="button"
+                >
+                  Definir pessoas na mesa
+                </button>
+                <p className="text-xs text-[rgba(236,225,196,0.62)]">
+                  {hasCompleteSeatAssignments
+                    ? "Mesa completa para os jogadores aptos."
+                    : `${missingSeatPlayers.length} jogador(es) apto(s) ainda sem lugar definido.`}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: TOTAL_TABLE_SEATS }, (_, seatIndex) => {
+                const assignedSeat = assignedEligibleSeatEntries.find((entry) => entry.seatIndex === seatIndex);
+
+                return (
+                  <div
+                    key={`seat-card-${seatIndex + 1}`}
+                    className="rounded-[1.15rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4"
+                  >
+                    <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                      Lugar {seatIndex + 1}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-[rgba(255,244,214,0.96)]">
+                      {assignedSeat?.playerName ?? "Vazio"}
+                    </p>
+                    <p className="mt-1 text-sm text-[rgba(236,225,196,0.62)]">
+                      {assignedSeat ? "Jogador definido para esta posicao." : "Nenhum jogador atribuido."}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {missingSeatPlayers.length > 0 ? (
+              <div className="mt-5 rounded-[1.1rem] border border-[rgba(255,166,84,0.2)] bg-[rgba(255,166,84,0.08)] px-4 py-4 text-sm text-[rgba(255,232,203,0.94)]">
+                Falta definir lugar para:{" "}
+                <strong>{missingSeatPlayers.map((player) => player.playerName).join(", ")}</strong>.
+              </div>
+            ) : null}
+
+            <div className="mt-6 border-t border-[rgba(255,208,101,0.1)] pt-5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <InfoTile
+                  label="Stack sugerido"
+                  value={formatStackValue(Math.max(Number.parseInt(averageStack || "0", 10) || 0, 0))}
+                  helper="valor base vindo das configuracoes"
+                />
+                <InfoTile
+                  label="Fichas estimadas na etapa"
+                  value={formatStackValue(estimatedStageChips)}
+                  helper="soma dos stacks dos jogadores aptos"
+                />
+                <InfoTile
+                  label="Stack medio dos vivos"
+                  value={formatStackValue(averageActiveStack)}
+                  helper={`aprox. ${averageActiveBigBlinds} BB`}
+                />
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {eligibleStagePlayers.map((player) => (
+                  <label
+                    key={`stack-${player.playerId}`}
+                    className={`rounded-[1.15rem] border px-4 py-4 ${
+                      player.outOfCurrentMatch
+                        ? "border-[rgba(255,166,84,0.18)] bg-[rgba(255,166,84,0.06)]"
+                        : "border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)]"
+                    }`}
+                  >
+                    <span className="text-[0.7rem] uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                      {player.playerName}
+                    </span>
+                    <input
+                      className="mt-3 h-11 w-full rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none placeholder:text-[rgba(236,225,196,0.4)]"
+                      inputMode="numeric"
+                      onChange={(event) =>
+                        handleEstimatedStackChange(player.playerId, event.target.value)
+                      }
+                      type="number"
+                      value={String(player.estimatedStack)}
+                    />
+                    <span className="mt-2 block text-xs text-[rgba(236,225,196,0.62)]">
+                      {player.outOfCurrentMatch
+                        ? "Saiu da partida atual. As fichas dele seguem compondo o stack medio dos vivos."
+                        : "Valor usado para estimar o stack medio da mesa."}
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           </section>
         </main>
@@ -1534,6 +1797,100 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function announceTableMessage(message: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    return;
+  }
+
+  const utterance = new SpeechSynthesisUtterance(message);
+  const voices = window.speechSynthesis.getVoices();
+  const preferredVoice =
+    voices.find((voice) => voice.lang.toLowerCase().startsWith("pt-br")) ??
+    voices.find((voice) => voice.lang.toLowerCase().startsWith("pt")) ??
+    null;
+
+  utterance.lang = preferredVoice?.lang ?? "pt-BR";
+  utterance.voice = preferredVoice;
+  utterance.rate = 0.96;
+  utterance.pitch = 1;
+
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+}
+
+function playBlindLevelChangedSignal(audioContextRef: MutableRefObject<AudioContext | null>) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const AudioContextConstructor =
+    window.AudioContext ||
+    (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+  if (!AudioContextConstructor) {
+    return;
+  }
+
+  const audioContext = audioContextRef.current ?? new AudioContextConstructor();
+  audioContextRef.current = audioContext;
+
+  if (audioContext.state === "suspended") {
+    void audioContext.resume();
+  }
+
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  const startAt = audioContext.currentTime;
+
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(740, startAt);
+  oscillator.frequency.linearRampToValueAtTime(880, startAt + 0.55);
+  oscillator.frequency.linearRampToValueAtTime(660, startAt + 1.1);
+
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(0.18, startAt + 0.08);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 1.25);
+
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start(startAt);
+  oscillator.stop(startAt + 1.28);
+}
+
+function buildBlindAnnouncement(level: BlindLevel) {
+  if (level.ante && level.ante > 0) {
+    return `${level.smallBlind} / ${level.bigBlind} com ante ${level.ante}`;
+  }
+
+  return `${level.smallBlind} / ${level.bigBlind}`;
+}
+
+function formatStackValue(value: number) {
+  return new Intl.NumberFormat("pt-BR").format(value);
+}
+
+function InfoTile({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper?: string;
+}) {
+  return (
+    <div className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-left shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
+      <p className="text-[0.7rem] uppercase tracking-[0.22em] text-[rgba(236,225,196,0.52)]">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-black text-[rgba(255,220,143,0.98)]">{value}</p>
+      {helper ? (
+        <p className="mt-1 text-xs text-[rgba(236,225,196,0.62)]">{helper}</p>
+      ) : null}
+    </div>
+  );
 }
 
 const sideButtonClassName =
