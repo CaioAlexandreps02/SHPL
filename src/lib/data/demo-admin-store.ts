@@ -29,21 +29,27 @@ type AdminStoreData = {
 };
 
 const adminStoreDocumentName = "demo-admin-store.json";
+const DEFAULT_ADMIN_EMAIL = "caioporto100@gmail.com";
+const DEFAULT_ADMIN_NAME = "Caio Alexandre";
 
 function buildDefaultAdminStore(): AdminStoreData {
   const snapshot = createMockSnapshot();
 
   return {
-    players: snapshot.annualRanking.map((entry) => ({
-      id: entry.playerId,
-      fullName: entry.playerName,
-      nickname: entry.playerName,
-      active: true,
-      birthDate: "",
-      email: "",
-      status: "Ativo",
-      extraRoles: [],
-    })),
+    players: snapshot.annualRanking.map((entry) => {
+      const isDefaultAdmin = entry.playerName.trim().toLowerCase() === "caio";
+
+      return {
+        id: entry.playerId,
+        fullName: isDefaultAdmin ? DEFAULT_ADMIN_NAME : entry.playerName,
+        nickname: entry.playerName,
+        active: true,
+        birthDate: "",
+        email: isDefaultAdmin ? DEFAULT_ADMIN_EMAIL : "",
+        status: "Ativo",
+        extraRoles: isDefaultAdmin ? ["Administrador"] : [],
+      };
+    }),
     stages: [
       ...snapshot.history.map((stage) => ({
         id: stage.id,
@@ -67,20 +73,46 @@ function buildDefaultAdminStore(): AdminStoreData {
   };
 }
 
-async function readStore() {
-  const parsed = await readServerJsonDocument(adminStoreDocumentName, buildDefaultAdminStore);
+function normalizeStoredPlayer(player: StoredPlayerRecord) {
+  const fullName =
+    player.fullName ?? (player as StoredPlayerRecord & { name?: string }).name ?? "";
+  const nickname =
+    player.nickname ?? (player as StoredPlayerRecord & { name?: string }).name ?? "";
+  const matchesDefaultAdmin =
+    fullName.trim().toLowerCase() === DEFAULT_ADMIN_NAME.toLowerCase() ||
+    nickname.trim().toLowerCase() === "caio";
+
+  const extraRoles = new Set(player.extraRoles ?? []);
+  let email = player.email ?? "";
+
+  if (matchesDefaultAdmin) {
+    email = DEFAULT_ADMIN_EMAIL;
+    extraRoles.add("Administrador");
+  }
 
   return {
-    players: parsed.players.map((player) => ({
-      ...player,
-      fullName: player.fullName ?? (player as StoredPlayerRecord & { name?: string }).name ?? "",
-      nickname:
-        player.nickname ??
-        (player as StoredPlayerRecord & { name?: string }).name ??
-        "",
-      email: player.email ?? "",
-      extraRoles: player.extraRoles ?? [],
-    })),
+    ...player,
+    fullName: matchesDefaultAdmin ? DEFAULT_ADMIN_NAME : fullName,
+    nickname: nickname || fullName,
+    email,
+    extraRoles: [...extraRoles],
+  };
+}
+
+async function readStore() {
+  const parsed = await readServerJsonDocument(adminStoreDocumentName, buildDefaultAdminStore);
+  const normalizedPlayers = parsed.players.map(normalizeStoredPlayer);
+  const didChangePlayers = JSON.stringify(normalizedPlayers) !== JSON.stringify(parsed.players);
+
+  if (didChangePlayers) {
+    await writeServerJsonDocument(adminStoreDocumentName, {
+      ...parsed,
+      players: normalizedPlayers,
+    });
+  }
+
+  return {
+    players: normalizedPlayers,
     stages: parsed.stages,
   };
 }
