@@ -26,6 +26,7 @@
 *.tgz
 tmp-dev-*.log
 tmp-dev-*.pid
+build-full.log
 
 # misc
 .DS_Store

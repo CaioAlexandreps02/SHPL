@@ -18,9 +18,10 @@ export function calculateMatchPoints(position: number) {
 export function calculateAnnualStagePoints(position: number, leftEarly: boolean) {
   if (leftEarly) return 1;
   if (position === 1) return 10;
-  if (position === 2) return 7;
-  if (position === 3) return 5;
-  return 3;
+  if (position === 2) return 8;
+  if (position === 3) return 6;
+  if (position === 4) return 4;
+  return 2;
 }
 
 export function buildDayRanking(players: Player[], matches: Match[]): RankingEntry[] {
@@ -158,8 +159,8 @@ function buildStageStatusLabel(
 
 function compareRanking(a: RankingEntry, b: RankingEntry) {
   return (
-    b.points - a.points ||
     b.wins - a.wins ||
+    b.points - a.points ||
     b.secondPlaces - a.secondPlaces ||
     b.thirdPlaces - a.thirdPlaces ||
     a.playerName.localeCompare(b.playerName)

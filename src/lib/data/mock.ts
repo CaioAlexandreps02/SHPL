@@ -31,7 +31,7 @@ const players: Player[] = [
   { id: "p4", name: "Tuba", active: true },
   { id: "p5", name: "Thiago", active: true },
   { id: "p6", name: "Davi", active: true },
-  { id: "p7", name: "Juan", active: true },
+  { id: "p7", name: "Rhuan", active: true },
 ];
 
 const blindStructure: BlindLevel[] = [
@@ -43,11 +43,11 @@ const blindStructure: BlindLevel[] = [
 ];
 
 const currentStage: Stage = {
-  id: "stage-04",
+  id: "stage-05",
   championshipId: championship.id,
-  title: "Etapa 04",
-  stageDate: "2026-07-15",
-  stageDateLabel: "15 de julho de 2026",
+  title: "Etapa 05",
+  stageDate: "2026-05-17",
+  stageDateLabel: "17 de maio de 2026",
   status: "scheduled",
   blindStructureId: "blind-default",
   matchesPlayed: 0,
@@ -56,22 +56,22 @@ const currentStage: Stage = {
 
 const upcomingStages: Stage[] = [
   {
-    id: "stage-05",
+    id: "stage-06",
     championshipId: championship.id,
-    title: "Etapa 05",
-    stageDate: "2026-08-19",
-    stageDateLabel: "19 de agosto de 2026",
+    title: "Etapa 06",
+    stageDate: "2026-06-21",
+    stageDateLabel: "21 de junho de 2026",
     status: "scheduled",
     blindStructureId: "blind-default",
     matchesPlayed: 0,
     eligiblePlayers: 0,
   },
   {
-    id: "stage-06",
+    id: "stage-07",
     championshipId: championship.id,
-    title: "Etapa 06",
-    stageDate: "2026-09-16",
-    stageDateLabel: "16 de setembro de 2026",
+    title: "Etapa 07",
+    stageDate: "2026-07-19",
+    stageDateLabel: "19 de julho de 2026",
     status: "scheduled",
     blindStructureId: "blind-default",
     matchesPlayed: 0,
@@ -104,29 +104,38 @@ const history: HistoryStageSummary[] = [
   {
     id: "stage-01",
     title: "Etapa 01",
-    stageDateLabel: "07 de janeiro de 2026",
+    stageDateLabel: "07 de fevereiro de 2026",
     winnerName: "Alisson",
-    matchesPlayed: 4,
+    matchesPlayed: 0,
     dailyPrize: formatCurrency(70),
-    annualPotContribution: formatCurrency(80),
+    annualPotContribution: formatCurrency(50),
   },
   {
     id: "stage-02",
     title: "Etapa 02",
-    stageDateLabel: "04 de fevereiro de 2026",
+    stageDateLabel: "14 de marco de 2026",
     winnerName: "Caio",
-    matchesPlayed: 5,
+    matchesPlayed: 0,
     dailyPrize: formatCurrency(80),
-    annualPotContribution: formatCurrency(70),
+    annualPotContribution: formatCurrency(50),
   },
   {
     id: "stage-03",
     title: "Etapa 03",
-    stageDateLabel: "10 de marco de 2026",
-    winnerName: "Thomas",
-    matchesPlayed: 4,
+    stageDateLabel: "05 de abril de 2026",
+    winnerName: "Alisson",
+    matchesPlayed: 0,
     dailyPrize: formatCurrency(60),
-    annualPotContribution: formatCurrency(60),
+    annualPotContribution: formatCurrency(50),
+  },
+  {
+    id: "stage-04",
+    title: "Etapa 04",
+    stageDateLabel: "12 de abril de 2026",
+    winnerName: "Alisson",
+    matchesPlayed: 0,
+    dailyPrize: formatCurrency(50),
+    annualPotContribution: formatCurrency(50),
   },
 ];
 
@@ -138,26 +147,26 @@ const chipSet: ChipSetItem[] = [
 ];
 
 const annualRankingSeed = [
-  { playerId: "p2", playerName: "Alisson", points: 27, wins: 2, secondPlaces: 1, thirdPlaces: 0 },
-  { playerId: "p1", playerName: "Caio", points: 20, wins: 1, secondPlaces: 2, thirdPlaces: 0 },
-  { playerId: "p3", playerName: "Thomas", points: 17, wins: 1, secondPlaces: 1, thirdPlaces: 1 },
-  { playerId: "p4", playerName: "Tuba", points: 10, wins: 0, secondPlaces: 1, thirdPlaces: 1 },
+  { playerId: "p2", playerName: "Alisson", points: 37, wins: 3, secondPlaces: 1, thirdPlaces: 0 },
+  { playerId: "p1", playerName: "Caio", points: 25, wins: 1, secondPlaces: 1, thirdPlaces: 1 },
+  { playerId: "p3", playerName: "Thomas", points: 15, wins: 0, secondPlaces: 1, thirdPlaces: 1 },
+  { playerId: "p4", playerName: "Tuba", points: 14, wins: 0, secondPlaces: 0, thirdPlaces: 2 },
+  { playerId: "p7", playerName: "Rhuan", points: 8, wins: 0, secondPlaces: 1, thirdPlaces: 0 },
+  { playerId: "p6", playerName: "Davi", points: 4, wins: 0, secondPlaces: 0, thirdPlaces: 0 },
   { playerId: "p5", playerName: "Thiago", points: 3, wins: 0, secondPlaces: 0, thirdPlaces: 0 },
-  { playerId: "p6", playerName: "Davi", points: 3, wins: 0, secondPlaces: 0, thirdPlaces: 0 },
-  { playerId: "p7", playerName: "Juan", points: 1, wins: 0, secondPlaces: 0, thirdPlaces: 0 },
 ] as const;
 
 const annualStagePoints: AnnualStagePoints[] = [
   {
     stageId: "stage-01",
     stageTitle: "Etapa 01",
-    stageDateLabel: "07 de janeiro de 2026",
-    stageDateShortLabel: "07/01",
+    stageDateLabel: "07 de fevereiro de 2026",
+    stageDateShortLabel: "07/02",
     pointsByPlayer: {
       p2: 10,
       p1: 3,
       p3: 7,
-      p4: 0,
+      p4: 5,
       p5: 0,
       p6: 3,
       p7: 1,
@@ -166,14 +175,14 @@ const annualStagePoints: AnnualStagePoints[] = [
   {
     stageId: "stage-02",
     stageTitle: "Etapa 02",
-    stageDateLabel: "04 de fevereiro de 2026",
-    stageDateShortLabel: "04/02",
+    stageDateLabel: "14 de marco de 2026",
+    stageDateShortLabel: "14/03",
     pointsByPlayer: {
       p2: 7,
       p1: 10,
       p3: 5,
-      p4: 7,
-      p5: 0,
+      p4: 1,
+      p5: 3,
       p6: 0,
       p7: 0,
     },
@@ -181,16 +190,31 @@ const annualStagePoints: AnnualStagePoints[] = [
   {
     stageId: "stage-03",
     stageTitle: "Etapa 03",
-    stageDateLabel: "10 de marco de 2026",
-    stageDateShortLabel: "10/03",
+    stageDateLabel: "05 de abril de 2026",
+    stageDateShortLabel: "05/04",
     pointsByPlayer: {
       p2: 10,
       p1: 7,
-      p3: 5,
-      p4: 3,
-      p5: 3,
+      p3: 3,
+      p4: 5,
+      p5: 0,
       p6: 0,
       p7: 0,
+    },
+  },
+  {
+    stageId: "stage-04",
+    stageTitle: "Etapa 04",
+    stageDateLabel: "12 de abril de 2026",
+    stageDateShortLabel: "12/04",
+    pointsByPlayer: {
+      p2: 10,
+      p1: 5,
+      p3: 0,
+      p4: 3,
+      p5: 0,
+      p6: 1,
+      p7: 7,
     },
   },
 ];
@@ -199,91 +223,30 @@ const stageMatchPoints: StageMatchPoints[] = [
   {
     stageId: "stage-01",
     stageTitle: "Etapa 01",
-    stageDateLabel: "07 de janeiro de 2026",
-    stageDateShortLabel: "07/01",
-    matches: [
-      {
-        matchNumber: 1,
-        label: "Primeira partida",
-        pointsByPlayer: { p2: 10, p3: 7, p1: 5, p4: 3, p5: 0, p6: 3, p7: 3 },
-      },
-      {
-        matchNumber: 2,
-        label: "Segunda partida",
-        pointsByPlayer: { p1: 10, p2: 7, p3: 5, p4: 3, p5: 0, p6: 3, p7: 3 },
-      },
-      {
-        matchNumber: 3,
-        label: "Terceira partida",
-        pointsByPlayer: { p2: 10, p1: 7, p3: 5, p4: 3, p5: 0, p6: 3, p7: 3 },
-      },
-      {
-        matchNumber: 4,
-        label: "Quarta partida",
-        pointsByPlayer: { p2: 10, p3: 7, p1: 5, p4: 3, p5: 0, p6: 3, p7: 3 },
-      },
-    ],
+    stageDateLabel: "07 de fevereiro de 2026",
+    stageDateShortLabel: "07/02",
+    matches: [],
   },
   {
     stageId: "stage-02",
     stageTitle: "Etapa 02",
-    stageDateLabel: "04 de fevereiro de 2026",
-    stageDateShortLabel: "04/02",
-    matches: [
-      {
-        matchNumber: 1,
-        label: "Primeira partida",
-        pointsByPlayer: { p1: 10, p2: 7, p3: 5, p4: 3, p5: 0, p6: 3, p7: 0 },
-      },
-      {
-        matchNumber: 2,
-        label: "Segunda partida",
-        pointsByPlayer: { p4: 10, p1: 7, p2: 5, p3: 3, p5: 0, p6: 3, p7: 0 },
-      },
-      {
-        matchNumber: 3,
-        label: "Terceira partida",
-        pointsByPlayer: { p1: 10, p3: 7, p2: 5, p4: 3, p5: 0, p6: 3, p7: 0 },
-      },
-      {
-        matchNumber: 4,
-        label: "Quarta partida",
-        pointsByPlayer: { p1: 10, p2: 7, p4: 5, p3: 3, p5: 0, p6: 3, p7: 0 },
-      },
-      {
-        matchNumber: 5,
-        label: "Quinta partida",
-        pointsByPlayer: { p2: 10, p1: 7, p3: 5, p4: 3, p5: 0, p6: 3, p7: 0 },
-      },
-    ],
+    stageDateLabel: "14 de marco de 2026",
+    stageDateShortLabel: "14/03",
+    matches: [],
   },
   {
     stageId: "stage-03",
     stageTitle: "Etapa 03",
-    stageDateLabel: "10 de marco de 2026",
-    stageDateShortLabel: "10/03",
-    matches: [
-      {
-        matchNumber: 1,
-        label: "Primeira partida",
-        pointsByPlayer: { p3: 10, p2: 7, p1: 5, p4: 3, p5: 3, p6: 0, p7: 0 },
-      },
-      {
-        matchNumber: 2,
-        label: "Segunda partida",
-        pointsByPlayer: { p3: 10, p1: 7, p2: 5, p4: 3, p5: 3, p6: 0, p7: 0 },
-      },
-      {
-        matchNumber: 3,
-        label: "Terceira partida",
-        pointsByPlayer: { p1: 10, p3: 7, p2: 5, p4: 3, p5: 3, p6: 0, p7: 0 },
-      },
-      {
-        matchNumber: 4,
-        label: "Quarta partida",
-        pointsByPlayer: { p3: 10, p2: 7, p1: 5, p4: 3, p5: 3, p6: 0, p7: 0 },
-      },
-    ],
+    stageDateLabel: "05 de abril de 2026",
+    stageDateShortLabel: "05/04",
+    matches: [],
+  },
+  {
+    stageId: "stage-04",
+    stageTitle: "Etapa 04",
+    stageDateLabel: "12 de abril de 2026",
+    stageDateShortLabel: "12/04",
+    matches: [],
   },
 ];
 
@@ -299,7 +262,7 @@ export function createMockSnapshot(): LeagueSnapshot {
     wins: entry.wins,
     secondPlaces: entry.secondPlaces,
     thirdPlaces: entry.thirdPlaces,
-    tiebreakSummary: "Classificacao apos 3 etapas",
+    tiebreakSummary: "Classificacao apos 4 etapas",
   }));
   const stagePlayers = deriveStagePlayers(
     players,
@@ -322,7 +285,7 @@ export function createMockSnapshot(): LeagueSnapshot {
     chipSet,
     financialSummary: {
       dailyPrizePool: formatCurrency(dailyPaidPlayers * 10),
-      annualPot: formatCurrency(210),
+      annualPot: formatCurrency(200),
       dailyPaidPlayers,
       annualPaidPlayers,
     },
@@ -347,9 +310,9 @@ export function createMockSnapshot(): LeagueSnapshot {
             "Monta rapidamente a mesa usando apenas jogadores aptos e nao marcados como saida antecipada.",
         },
         {
-          title: "Eliminar da partida",
+          title: "Saiu da partida",
           description:
-            "Registra a ordem de eliminacao sem remover o jogador da etapa inteira.",
+            "Registra quem perdeu todas as fichas da partida atual sem tirar o jogador da etapa.",
         },
         {
           title: "Saiu da etapa",

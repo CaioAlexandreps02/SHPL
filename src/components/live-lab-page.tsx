@@ -314,6 +314,21 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     ? `${LIVE_REMOTE_CHANNEL_PREFIX}:${linkedStageOption.stageId}`
     : null;
 
+  function handleSelectCaptureMode() {
+    setDeviceRole("camera");
+    setActiveView("capture");
+  }
+
+  function handleSelectMonitorMode() {
+    setDeviceRole("monitor");
+    setActiveView("admin");
+  }
+
+  function handleEnableLocalCaptureFromAdmin() {
+    setDeviceRole("camera");
+    setActiveView("admin");
+  }
+
   function attachPreviewStream(stream: MediaStream | null) {
     for (const element of [videoRef.current, adminVideoRef.current]) {
       if (!element) {
@@ -684,6 +699,10 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   }, [selectedAudioDeviceId, selectedVideoDeviceId]);
 
   useEffect(() => {
+    if (!boardFeaturesEnabled) {
+      return;
+    }
+
     if (typeof window === "undefined") {
       return;
     }
@@ -697,6 +716,9 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
       if (storedDeviceRole === "camera" || storedDeviceRole === "monitor") {
         setDeviceRole(storedDeviceRole);
+        setActiveView(storedDeviceRole === "camera" ? "capture" : "admin");
+      } else {
+        setActiveView("admin");
       }
     }
 
@@ -755,7 +777,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     } finally {
       hasHydratedSettingsRef.current = true;
     }
-  }, [integratedMode, loadDevices]);
+  }, [boardFeaturesEnabled, integratedMode, loadDevices]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !integratedMode) {
@@ -941,6 +963,10 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   }, [captureStatus, deviceRole, error, integratedMode, liveSessionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!boardFeaturesEnabled) {
+      return;
+    }
+
     if (typeof window === "undefined") {
       return;
     }
@@ -959,7 +985,14 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         isVideoEnabled,
       }),
     );
-  }, [boardRegion, selectedAudioDeviceId, selectedVideoDeviceId, isAudioEnabled, isVideoEnabled]);
+  }, [
+    boardFeaturesEnabled,
+    boardRegion,
+    selectedAudioDeviceId,
+    selectedVideoDeviceId,
+    isAudioEnabled,
+    isVideoEnabled,
+  ]);
 
   useEffect(() => {
     boardRegionRef.current = boardRegion;
@@ -1121,7 +1154,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       worker.terminate();
       boardWorkerRef.current = null;
     };
-  }, []);
+  }, [boardFeaturesEnabled]);
 
   useEffect(() => {
     if (!boardFeaturesEnabled) {
@@ -1249,24 +1282,30 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         setIsLoadingSavedTranscripts(false);
       }
 
-      try {
-        setIsLoadingSavedCardSamples(true);
-        const cardSamples = await listSavedCardSamples();
-        setSavedCardSamples(cardSamples);
-        if (cardSamples[0]?.id) {
-          setSelectedCardSampleId((current) => current || cardSamples[0].id);
+      if (boardFeaturesEnabled) {
+        try {
+          setIsLoadingSavedCardSamples(true);
+          const cardSamples = await listSavedCardSamples();
+          setSavedCardSamples(cardSamples);
+          if (cardSamples[0]?.id) {
+            setSelectedCardSampleId((current) => current || cardSamples[0].id);
+          }
+        } catch (cardSamplesError) {
+          setTranscriptError(
+            cardSamplesError instanceof Error
+              ? cardSamplesError.message
+              : "Nao foi possivel carregar a base local das cartas.",
+          );
+        } finally {
+          setIsLoadingSavedCardSamples(false);
         }
-      } catch (cardSamplesError) {
-        setTranscriptError(
-          cardSamplesError instanceof Error
-            ? cardSamplesError.message
-            : "Nao foi possivel carregar a base local das cartas.",
-        );
-      } finally {
+      } else {
+        setSavedCardSamples([]);
+        setSelectedCardSampleId("");
         setIsLoadingSavedCardSamples(false);
       }
     })();
-  }, []);
+  }, [boardFeaturesEnabled]);
 
   useEffect(() => {
     return () => {
@@ -3509,15 +3548,23 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         <section className="grid gap-4 md:grid-cols-3">
           <SubmenuCard
             active={activeView === "capture"}
-            description={integratedMode ? "Preview da transmissao e controle da sessao principal." : "Preview da camera, sessao continua e teste direto da transcricao."}
-            label="Captura ao vivo"
-            onClick={() => setActiveView("capture")}
+            description={
+              integratedMode
+                ? "Use no celular ou aparelho que vai abrir a camera e enviar o preview da transmissao."
+                : "Preview da camera, sessao continua e teste direto da transcricao."
+            }
+            label={integratedMode ? "Este aparelho transmite" : "Captura ao vivo"}
+            onClick={integratedMode ? handleSelectCaptureMode : () => setActiveView("capture")}
           />
           <SubmenuCard
             active={activeView === "admin"}
-            description={integratedMode ? "Vinculo com a partida, comandos detectados e supervisao da gravacao." : "Comandos detectados, maos abertas e supervisao da gravacao local."}
-            label="Administracao"
-            onClick={() => setActiveView("admin")}
+            description={
+              integratedMode
+                ? "Use no PC ou segundo celular para monitorar a captura, controlar a sessao e revisar comandos."
+                : "Comandos detectados, maos abertas e supervisao da gravacao local."
+            }
+            label={integratedMode ? "Este aparelho monitora" : "Administracao"}
+            onClick={integratedMode ? handleSelectMonitorMode : () => setActiveView("admin")}
           />
           <SubmenuCard
             active={activeView === "videos"}
@@ -3727,67 +3774,12 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                   <MetricCard label="Etapa vinculada" value={linkedStageTitle} />
                   <MetricCard label="Partida ativa" value={linkedMatchLabel} />
                   <MetricCard label="Blind atual" value={linkedBlindLabel} />
-                  <MetricCard
-                    label="Papel deste aparelho"
-                    value={deviceRole === "camera" ? "Fonte de captura" : "Monitor de controle"}
-                  />
-                </div>
-
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <button
-                    className={`rounded-[1rem] border px-4 py-4 text-left transition ${
-                      deviceRole === "camera"
-                        ? "border-[rgba(255,208,101,0.28)] bg-[rgba(255,183,32,0.12)]"
-                        : "border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)]"
-                    }`}
-                    onClick={() => setDeviceRole("camera")}
-                    type="button"
-                  >
-                    <p className="text-sm font-bold text-[rgba(255,239,192,0.96)]">
-                      Fonte de captura
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-[rgba(237,226,197,0.68)]">
-                      Use no celular que vai ficar no tripe. Este aparelho abre a camera e envia o preview.
-                    </p>
-                  </button>
-                  <button
-                    className={`rounded-[1rem] border px-4 py-4 text-left transition ${
-                      deviceRole === "monitor"
-                        ? "border-[rgba(255,208,101,0.28)] bg-[rgba(255,183,32,0.12)]"
-                        : "border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)]"
-                    }`}
-                    onClick={() => setDeviceRole("monitor")}
-                    type="button"
-                  >
-                    <p className="text-sm font-bold text-[rgba(255,239,192,0.96)]">
-                      Monitor de controle
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-[rgba(237,226,197,0.68)]">
-                      Use no PC ou no segundo celular. Este aparelho nao abre a camera e apenas monitora a fonte.
-                    </p>
-                  </button>
+                  <MetricCard label="Modo" value="Fonte de captura" />
                 </div>
 
                 <p className="mt-4 rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)] px-4 py-3 text-sm text-[rgba(237,226,197,0.76)]">
                   Ponte remota: {remoteBridgeStatus}
                 </p>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {linkedSeatSummaries.length === 0 ? (
-                    <span className="text-sm text-[rgba(237,226,197,0.72)]">
-                      Abra a mesa e confirme os assentos para a transmissao herdar os lugares da partida.
-                    </span>
-                  ) : (
-                    linkedSeatSummaries.map((seat) => (
-                      <span
-                        key={`capture-seat-${seat.seatIndex}`}
-                        className="rounded-full border border-[rgba(255,208,101,0.14)] bg-[rgba(4,17,12,0.62)] px-3 py-2 text-xs uppercase tracking-[0.16em] text-[rgba(255,239,192,0.92)]"
-                      >
-                        Lugar {seat.seatIndex + 1}: {seat.playerName}
-                      </span>
-                    ))
-                  )}
-                </div>
               </div>
             ) : null}
 
@@ -3846,6 +3838,21 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                       tone="muted"
                     />
                     <ActionButton label="Parar preview" onClick={stopStream} tone="muted" />
+                    {integratedMode ? (
+                      <ActionButton
+                        label={
+                          deviceRole === "camera"
+                            ? "Voltar para monitorar"
+                            : "Este aparelho tambem transmite"
+                        }
+                        onClick={
+                          deviceRole === "camera"
+                            ? handleSelectMonitorMode
+                            : handleEnableLocalCaptureFromAdmin
+                        }
+                        tone={deviceRole === "camera" ? "muted" : "accent"}
+                      />
+                    ) : null}
                   </div>
                 </div>
 
@@ -3946,43 +3953,6 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                           ))
                         )}
                       </div>
-                    </div>
-                  ) : null}
-
-                  {integratedMode ? (
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <button
-                        className={`rounded-[1rem] border px-4 py-4 text-left transition ${
-                          deviceRole === "camera"
-                            ? "border-[rgba(255,208,101,0.28)] bg-[rgba(255,183,32,0.12)]"
-                            : "border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)]"
-                        }`}
-                        onClick={() => setDeviceRole("camera")}
-                        type="button"
-                      >
-                        <p className="text-sm font-bold text-[rgba(255,239,192,0.96)]">
-                          Este aparelho transmite
-                        </p>
-                        <p className="mt-2 text-sm leading-6 text-[rgba(237,226,197,0.68)]">
-                          Abre camera e microfone locais para enviar o preview remoto.
-                        </p>
-                      </button>
-                      <button
-                        className={`rounded-[1rem] border px-4 py-4 text-left transition ${
-                          deviceRole === "monitor"
-                            ? "border-[rgba(255,208,101,0.28)] bg-[rgba(255,183,32,0.12)]"
-                            : "border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)]"
-                        }`}
-                        onClick={() => setDeviceRole("monitor")}
-                        type="button"
-                      >
-                        <p className="text-sm font-bold text-[rgba(255,239,192,0.96)]">
-                          Este aparelho monitora
-                        </p>
-                        <p className="mt-2 text-sm leading-6 text-[rgba(237,226,197,0.68)]">
-                          Nao abre camera local. So acompanha o preview e controla a sessao da fonte.
-                        </p>
-                      </button>
                     </div>
                   ) : null}
 

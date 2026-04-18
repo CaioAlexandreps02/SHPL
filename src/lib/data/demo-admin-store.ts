@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-
 import { createMockSnapshot } from "@/lib/data/mock";
+import {
+  readServerJsonDocument,
+  writeServerJsonDocument,
+} from "@/lib/data/server-json-store";
 import type { StageStatus } from "@/lib/domain/types";
 
 export type StoredPlayerRecord = {
@@ -27,22 +28,7 @@ type AdminStoreData = {
   stages: StoredStageRecord[];
 };
 
-const dataDirectory = path.join(process.cwd(), "data");
-const adminStoreFile = path.join(dataDirectory, "demo-admin-store.json");
-
-async function ensureAdminStore() {
-  await mkdir(dataDirectory, { recursive: true });
-
-  try {
-    await readFile(adminStoreFile, "utf8");
-  } catch {
-    await writeFile(
-      adminStoreFile,
-      JSON.stringify(buildDefaultAdminStore(), null, 2),
-      "utf8"
-    );
-  }
-}
+const adminStoreDocumentName = "demo-admin-store.json";
 
 function buildDefaultAdminStore(): AdminStoreData {
   const snapshot = createMockSnapshot();
@@ -82,9 +68,7 @@ function buildDefaultAdminStore(): AdminStoreData {
 }
 
 async function readStore() {
-  await ensureAdminStore();
-  const raw = await readFile(adminStoreFile, "utf8");
-  const parsed = JSON.parse(stripBom(raw)) as AdminStoreData;
+  const parsed = await readServerJsonDocument(adminStoreDocumentName, buildDefaultAdminStore);
 
   return {
     players: parsed.players.map((player) => ({
@@ -102,11 +86,7 @@ async function readStore() {
 }
 
 async function writeStore(data: AdminStoreData) {
-  await writeFile(adminStoreFile, JSON.stringify(data, null, 2), "utf8");
-}
-
-function stripBom(value: string) {
-  return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
+  await writeServerJsonDocument(adminStoreDocumentName, data);
 }
 
 export async function getStoredPlayers() {

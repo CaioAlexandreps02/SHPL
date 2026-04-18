@@ -29,10 +29,6 @@ const menuItems: MainMenuItem[] = [
     imageSrc: "/jogo-casual-menu.png",
     imageAlt: "Jogo de poker e pilhas de dinheiro",
   },
-  {
-    href: "/live-lab",
-    label: "Testes Ao Vivo",
-  },
 ];
 
 export function MainMenuV2() {

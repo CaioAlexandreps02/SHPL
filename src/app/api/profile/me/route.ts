@@ -4,7 +4,6 @@ import { getUserAccessFromCookieHeader } from "@/lib/auth/access";
 import { getDemoUserByEmail, updateDemoUserProfile } from "@/lib/auth/demo-users";
 import { AUTH_COOKIE, createSessionValue, getAuthCookieOptions } from "@/lib/auth/session";
 import { resolveParticipantAccessByEmail } from "@/lib/data/demo-admin-store";
-import { hasSupabaseServerEnv } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -38,13 +37,6 @@ export async function PUT(request: Request) {
 
   if (!access) {
     return NextResponse.json({ error: "Sessao invalida." }, { status: 401 });
-  }
-
-  if (hasSupabaseServerEnv) {
-    return NextResponse.json(
-      { error: "Edicao de perfil via Supabase ainda nao foi configurada neste ambiente." },
-      { status: 501 }
-    );
   }
 
   const { fullName, email, password, photoDataUrl } = await request.json();

@@ -1,9 +1,10 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-
 import { getDemoUserPhotoMap } from "@/lib/auth/demo-users";
 import { getStoredPlayers, getStoredStages, saveStoredStage } from "@/lib/data/demo-admin-store";
 import { createMockSnapshot } from "@/lib/data/mock";
+import {
+  readServerJsonDocument,
+  writeServerJsonDocument,
+} from "@/lib/data/server-json-store";
 import { formatCurrency } from "@/lib/domain/rules";
 import type {
   AnnualStagePoints,
@@ -53,18 +54,7 @@ export type FinalizeStageInput = {
   buyInDaily: number;
 };
 
-const dataDirectory = path.join(process.cwd(), "data");
-const stateFile = path.join(dataDirectory, "demo-league-state.json");
-
-async function ensureStateFile() {
-  await mkdir(dataDirectory, { recursive: true });
-
-  try {
-    await readFile(stateFile, "utf8");
-  } catch {
-    await writeFile(stateFile, JSON.stringify(buildDefaultState(), null, 2), "utf8");
-  }
-}
+const stateDocumentName = "demo-league-state.json";
 
 function buildDefaultState(): DemoLeagueStateData {
   const snapshot = createMockSnapshot();
@@ -86,17 +76,11 @@ function buildDefaultState(): DemoLeagueStateData {
 }
 
 async function readState() {
-  await ensureStateFile();
-  const raw = await readFile(stateFile, "utf8");
-  return JSON.parse(stripBom(raw)) as DemoLeagueStateData;
+  return readServerJsonDocument(stateDocumentName, buildDefaultState);
 }
 
 async function writeState(data: DemoLeagueStateData) {
-  await writeFile(stateFile, JSON.stringify(data, null, 2), "utf8");
-}
-
-function stripBom(value: string) {
-  return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
+  await writeServerJsonDocument(stateDocumentName, data);
 }
 
 export async function getDemoLeagueSnapshot(): Promise<LeagueSnapshot> {
@@ -456,8 +440,8 @@ function toSnapshotStage(
 
 function compareRankingEntries(left: RankingEntry, right: RankingEntry) {
   return (
-    right.points - left.points ||
     right.wins - left.wins ||
+    right.points - left.points ||
     right.secondPlaces - left.secondPlaces ||
     right.thirdPlaces - left.thirdPlaces ||
     left.playerName.localeCompare(right.playerName, "pt-BR")
@@ -474,14 +458,18 @@ function calculateAnnualPoints(position: number, leftStage: boolean) {
   }
 
   if (position === 2) {
-    return 7;
+    return 8;
   }
 
   if (position === 3) {
-    return 5;
+    return 6;
   }
 
-  return 3;
+  if (position === 4) {
+    return 4;
+  }
+
+  return 2;
 }
 
 function buildFinalRanking(

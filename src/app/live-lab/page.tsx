@@ -1,11 +1,5 @@
-import { LiveLabPage } from "@/components/live-lab-page";
-import { UserProfileFab } from "@/components/user-profile-fab";
+import { redirect } from "next/navigation";
 
 export default function LiveLabRoute() {
-  return (
-    <>
-      <UserProfileFab />
-      <LiveLabPage />
-    </>
-  );
+  redirect("/shpl-2026/transmissao");
 }

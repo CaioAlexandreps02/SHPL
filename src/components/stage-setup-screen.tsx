@@ -27,6 +27,9 @@ type StagePlayerControl = {
 type PlayerActionSnapshot = {
   players: StagePlayerControl[];
   selectedPlayerId: string | null;
+  currentMatchClosed: boolean;
+  completedMatchDurations: number[];
+  isRunning: boolean;
 };
 
 const SETTINGS_STORAGE_KEY = "shpl-2026-settings";
@@ -615,6 +618,9 @@ export function StageSetupScreen({
       {
         players: structuredClone(players),
         selectedPlayerId,
+        currentMatchClosed,
+        completedMatchDurations: structuredClone(completedMatchDurations),
+        isRunning,
       },
     ]);
   }
@@ -702,6 +708,7 @@ export function StageSetupScreen({
 
           return {
             ...player,
+            outOfCurrentMatch: true,
             matchPoints: nextMatchPoints,
           };
         });
@@ -711,6 +718,15 @@ export function StageSetupScreen({
       });
 
     if (winnerName) {
+      setIsRunning(false);
+      setCurrentMatchClosed(true);
+      setCompletedMatchDurations((currentDurations) => {
+        if (currentDurations.length > currentMatchIndex) {
+          return currentDurations;
+        }
+
+        return [...currentDurations, matchElapsedSeconds];
+      });
       setStageNotice(`${winnerName} ficou sozinho na partida e assumiu automaticamente o 1o lugar.`);
       return;
     }
@@ -751,6 +767,9 @@ export function StageSetupScreen({
 
       setPlayers(previousSnapshot.players);
       setSelectedPlayerId(previousSnapshot.selectedPlayerId);
+      setCurrentMatchClosed(previousSnapshot.currentMatchClosed);
+      setCompletedMatchDurations(previousSnapshot.completedMatchDurations);
+      setIsRunning(previousSnapshot.isRunning);
       setStageNotice("Ultima acao desfeita.");
       return currentHistory.slice(0, -1);
     });

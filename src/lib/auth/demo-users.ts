@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+
+import { readServerJsonDocument, writeServerJsonDocument } from "@/lib/data/server-json-store";
+import {
+  createServiceRoleSupabaseClient,
+  hasSupabaseServiceRoleEnv,
+} from "@/lib/supabase/server";
 
 type DemoUser = {
   fullName: string;
@@ -10,31 +14,14 @@ type DemoUser = {
   photoDataUrl?: string;
 };
 
-const dataDirectory = path.join(process.cwd(), "data");
-const usersFile = path.join(dataDirectory, "demo-users.json");
+const usersDocumentName = "demo-users.json";
 
-async function ensureUsersFile() {
-  await mkdir(dataDirectory, { recursive: true });
-
-  try {
-    await readFile(usersFile, "utf8");
-  } catch {
-    await writeFile(usersFile, "[]", "utf8");
-  }
-}
-
-async function readUsers() {
-  await ensureUsersFile();
-  const raw = await readFile(usersFile, "utf8");
-  return JSON.parse(stripBom(raw)) as DemoUser[];
+async function readUsers(): Promise<DemoUser[]> {
+  return readServerJsonDocument<DemoUser[]>(usersDocumentName, () => [] as DemoUser[]);
 }
 
 async function writeUsers(users: DemoUser[]) {
-  await writeFile(usersFile, JSON.stringify(users, null, 2), "utf8");
-}
-
-function stripBom(value: string) {
-  return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
+  await writeServerJsonDocument(usersDocumentName, users);
 }
 
 function hashPassword(password: string) {
@@ -78,12 +65,73 @@ export async function validateDemoUser(input: {
 }
 
 export async function getDemoUserByEmail(email: string) {
+  if (hasSupabaseServiceRoleEnv) {
+    const supabase = createServiceRoleSupabaseClient();
+
+    if (supabase) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data, error } = await supabase.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
+
+      if (!error) {
+        const authUser = data.users.find(
+          (user) => user.email?.trim().toLowerCase() === normalizedEmail
+        );
+
+        if (authUser?.email) {
+          return {
+            fullName:
+              typeof authUser.user_metadata?.full_name === "string"
+                ? authUser.user_metadata.full_name
+                : authUser.email.split("@")[0],
+            email: authUser.email,
+            passwordHash: "",
+            createdAt: authUser.created_at ?? new Date().toISOString(),
+            photoDataUrl:
+              typeof authUser.user_metadata?.photo_data_url === "string"
+                ? authUser.user_metadata.photo_data_url
+                : "",
+          } satisfies DemoUser;
+        }
+      }
+    }
+  }
+
   const users = await readUsers();
   const normalizedEmail = email.trim().toLowerCase();
   return users.find((user) => user.email === normalizedEmail) ?? null;
 }
 
 export async function getDemoUserPhotoMap() {
+  if (hasSupabaseServiceRoleEnv) {
+    const supabase = createServiceRoleSupabaseClient();
+
+    if (supabase) {
+      const { data, error } = await supabase.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
+
+      if (!error) {
+        return new Map(
+          data.users
+            .filter(
+              (user) =>
+                Boolean(user.email) &&
+                typeof user.user_metadata?.photo_data_url === "string" &&
+                user.user_metadata.photo_data_url
+            )
+            .map((user) => [
+              user.email!.trim().toLowerCase(),
+              user.user_metadata.photo_data_url as string,
+            ])
+        );
+      }
+    }
+  }
+
   const users = await readUsers();
 
   return new Map(
@@ -100,6 +148,66 @@ export async function updateDemoUserProfile(input: {
   password?: string;
   photoDataUrl?: string;
 }) {
+  if (hasSupabaseServiceRoleEnv) {
+    const supabase = createServiceRoleSupabaseClient();
+
+    if (!supabase) {
+      throw new Error("Nao foi possivel iniciar o Supabase.");
+    }
+
+    const normalizedCurrentEmail = input.currentEmail.trim().toLowerCase();
+    const normalizedNextEmail = input.nextEmail.trim().toLowerCase();
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+
+    if (error) {
+      throw new Error("Nao foi possivel localizar a conta no Supabase.");
+    }
+
+    const authUser = data.users.find(
+      (user) => user.email?.trim().toLowerCase() === normalizedCurrentEmail
+    );
+
+    if (!authUser) {
+      throw new Error("Conta nao encontrada.");
+    }
+
+    const nextMetadata = {
+      ...(authUser.user_metadata ?? {}),
+      full_name: input.fullName.trim(),
+      photo_data_url: input.photoDataUrl ?? authUser.user_metadata?.photo_data_url ?? "",
+    };
+
+    const { data: updatedData, error: updateError } = await supabase.auth.admin.updateUserById(
+      authUser.id,
+      {
+        email: normalizedNextEmail,
+        password: input.password?.trim() ? input.password : undefined,
+        user_metadata: nextMetadata,
+      }
+    );
+
+    if (updateError || !updatedData.user?.email) {
+      throw new Error(updateError?.message ?? "Nao foi possivel atualizar o perfil.");
+    }
+
+    return {
+      fullName:
+        typeof updatedData.user.user_metadata?.full_name === "string"
+          ? updatedData.user.user_metadata.full_name
+          : input.fullName.trim(),
+      email: updatedData.user.email,
+      passwordHash: "",
+      createdAt: updatedData.user.created_at ?? new Date().toISOString(),
+      photoDataUrl:
+        typeof updatedData.user.user_metadata?.photo_data_url === "string"
+          ? updatedData.user.user_metadata.photo_data_url
+          : "",
+    } satisfies DemoUser;
+  }
+
   const users = await readUsers();
   const normalizedCurrentEmail = input.currentEmail.trim().toLowerCase();
   const normalizedNextEmail = input.nextEmail.trim().toLowerCase();
