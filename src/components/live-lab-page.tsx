@@ -1,5 +1,6 @@
 "use client";
 
+import NextImage from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 
@@ -31,6 +32,7 @@ import {
   type BoardWorkerMessage,
 } from "@/lib/live-lab/board-detection";
 import {
+  fetchLinkedStageContext,
   readLinkedStageContext,
   type LiveLinkedStageContext,
   type LiveLinkedStageOption,
@@ -149,6 +151,12 @@ type LiveRemoteMessage =
       viewerId: string;
     }
   | {
+      type: "preview-frame";
+      fromId: string;
+      dataUrl: string;
+      capturedAt: string;
+    }
+  | {
       type: "state";
       deviceId: string;
       role: IntegratedDeviceRole;
@@ -186,6 +194,7 @@ const INTEGRATED_DEVICE_ROLE_STORAGE_KEY = "shpl-live-lab-integrated-device-role
 const INTEGRATED_DEVICE_ID_STORAGE_KEY = "shpl-live-lab-integrated-device-id";
 const LIVE_REMOTE_BROADCAST_EVENT = "live-remote";
 const LIVE_REMOTE_CHANNEL_PREFIX = "shpl-live-remote";
+const LIVE_REMOTE_PREVIEW_FRAME_INTERVAL_MS = 1200;
 const BOARD_MONITOR_IDLE_INTERVAL_MS = 1200;
 const BOARD_MONITOR_ACTIVE_INTERVAL_MS = 800;
 const BOARD_ANALYSIS_MAX_WIDTH = 420;
@@ -217,6 +226,9 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   const remotePreviewStreamRef = useRef<MediaStream | null>(null);
   const liveRemoteDeviceIdRef = useRef("");
   const remoteViewerIdRef = useRef<string | null>(null);
+  const previewFrameCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewFrameLoopIdRef = useRef(0);
+  const localTranscriptionAvailableRef = useRef<boolean | null>(null);
   const snapshotCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const boardProcessingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const datasetImportInputRef = useRef<HTMLInputElement | null>(null);
@@ -285,6 +297,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     mode === "integrated" ? "monitor" : "camera",
   );
   const [remoteBridgeStatus, setRemoteBridgeStatus] = useState("Selecione o papel deste dispositivo.");
+  const [remotePreviewFrameUrl, setRemotePreviewFrameUrl] = useState("");
   const [transcriptFeed, setTranscriptFeed] = useState<TranscriptEntry[]>([]);
   const [activeHandTitle, setActiveHandTitle] = useState("");
   const [activeHandStartedAtIso, setActiveHandStartedAtIso] = useState("");
@@ -336,11 +349,56 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         continue;
       }
 
+      element.muted = true;
+      element.playsInline = true;
+      element.autoplay = true;
       element.srcObject = stream;
       if (stream) {
         void element.play().catch(() => undefined);
       }
     }
+  }
+
+  function getPreviewSourceVideoElement() {
+    return (
+      [videoRef.current, adminVideoRef.current].find(
+        (element) => element && element.videoWidth > 0 && element.videoHeight > 0,
+      ) ?? null
+    );
+  }
+
+  function getPreviewFrameCanvas() {
+    if (!previewFrameCanvasRef.current && typeof document !== "undefined") {
+      previewFrameCanvasRef.current = document.createElement("canvas");
+    }
+
+    return previewFrameCanvasRef.current;
+  }
+
+  function capturePreviewFrameDataUrl() {
+    const sourceVideo = getPreviewSourceVideoElement();
+    const canvas = getPreviewFrameCanvas();
+
+    if (!sourceVideo || !canvas || sourceVideo.videoWidth === 0 || sourceVideo.videoHeight === 0) {
+      return null;
+    }
+
+    const targetWidth = Math.min(640, sourceVideo.videoWidth);
+    const targetHeight = Math.max(
+      1,
+      Math.round((targetWidth / sourceVideo.videoWidth) * sourceVideo.videoHeight),
+    );
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return null;
+    }
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(sourceVideo, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.62);
   }
 
   async function syncPreviewElementsWithStream(stream: MediaStream | null) {
@@ -395,6 +453,10 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     if (isRemoteMonitor) {
       attachPreviewStream(null);
     }
+  }
+
+  function clearRemotePreviewFrame() {
+    setRemotePreviewFrameUrl("");
   }
 
   function getOrCreateIntegratedDeviceId() {
@@ -508,9 +570,65 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
   function resetRemotePreviewState() {
     clearRemotePreviewStream();
+    clearRemotePreviewFrame();
     setCaptureStatus("idle");
     setLiveSessionStatus("idle");
     liveSessionStatusRef.current = "idle";
+  }
+
+  async function refreshLocalTranscriptionAvailability(options: { force?: boolean } = {}) {
+    if (!options.force && localTranscriptionAvailableRef.current !== null) {
+      return localTranscriptionAvailableRef.current;
+    }
+
+    try {
+      const response = await fetch("/api/live-lab/transcribe", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Falha ao consultar o motor local.");
+      }
+
+      const payload = (await response.json()) as { available?: boolean };
+      const isAvailable = Boolean(payload.available);
+      localTranscriptionAvailableRef.current = isAvailable;
+      return isAvailable;
+    } catch {
+      localTranscriptionAvailableRef.current = false;
+      return false;
+    }
+  }
+
+  function stopRemotePreviewFrameLoop() {
+    previewFrameLoopIdRef.current += 1;
+  }
+
+  async function runRemotePreviewFrameLoop(loopId: number) {
+    while (
+      previewFrameLoopIdRef.current === loopId &&
+      integratedMode &&
+      deviceRole === "camera" &&
+      captureStatus === "preview"
+    ) {
+      try {
+        const dataUrl = capturePreviewFrameDataUrl();
+
+        if (dataUrl) {
+          await sendLiveRemoteMessage({
+            type: "preview-frame",
+            fromId: getOrCreateIntegratedDeviceId(),
+            dataUrl,
+            capturedAt: new Date().toISOString(),
+          });
+        }
+      } catch {
+        // O envio do frame serve apenas como fallback para o preview remoto.
+      }
+
+      await wait(LIVE_REMOTE_PREVIEW_FRAME_INTERVAL_MS);
+    }
   }
 
   async function announceViewerReady() {
@@ -540,7 +658,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     livePeerConnectionRef.current = peerConnection;
     remoteViewerIdRef.current = viewerId;
 
-    streamRef.current.getTracks().forEach((track) => {
+    streamRef.current.getVideoTracks().forEach((track) => {
       peerConnection.addTrack(track, streamRef.current as MediaStream);
     });
 
@@ -599,6 +717,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
       if (stream) {
         remotePreviewStreamRef.current = stream;
+        clearRemotePreviewFrame();
         attachPreviewStream(stream);
         setCaptureStatus("preview");
         setRemoteBridgeStatus("Preview remoto conectado. Este dispositivo esta monitorando a fonte.");
@@ -607,6 +726,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
       const nextRemoteStream = ensureRemoteMediaStream();
       nextRemoteStream.addTrack(event.track);
+      clearRemotePreviewFrame();
       attachPreviewStream(nextRemoteStream);
       setCaptureStatus("preview");
       setRemoteBridgeStatus("Preview remoto conectado. Este dispositivo esta monitorando a fonte.");
@@ -676,16 +796,46 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     await livePeerConnectionRef.current.addIceCandidate(new RTCIceCandidate(message.candidate));
   }
 
-  const refreshLinkedStageContext = useCallback(() => {
+  const refreshLinkedStageContext = useCallback(async () => {
     if (!integratedMode || !linkedStageOption) {
       setLinkedStageContext(null);
       return null;
     }
 
-    const nextContext = readLinkedStageContext(linkedStageOption);
+    const nextContext =
+      (await fetchLinkedStageContext(linkedStageOption)) ?? readLinkedStageContext(linkedStageOption);
     setLinkedStageContext(nextContext);
     return nextContext;
   }, [integratedMode, linkedStageOption]);
+  const appendLinkedStageLogEntries = useCallback(
+    async (entries: string[]) => {
+      const stageId = linkedStageContext?.stageId ?? linkedStageOption?.stageId;
+      const stageTitle = linkedStageContext?.stageTitle ?? linkedStageOption?.stageTitle;
+
+      if (!stageId || !stageTitle) {
+        return;
+      }
+
+      try {
+        await fetch("/api/shpl-admin/stage-log", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            stage: {
+              id: stageId,
+              title: stageTitle,
+            },
+            entries,
+          }),
+        });
+      } catch {
+        // Mantem a transmissao funcionando mesmo sem conseguir anexar o TXT da etapa.
+      }
+    },
+    [linkedStageContext, linkedStageOption],
+  );
 
   const loadDevices = useCallback(async () => {
     try {
@@ -915,6 +1065,21 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
           return;
         }
 
+        if (payload.type === "preview-frame") {
+          if (deviceRole !== "monitor" || payload.fromId === deviceId) {
+            return;
+          }
+
+          setRemotePreviewFrameUrl(payload.dataUrl);
+          setCaptureStatus("preview");
+
+          if (!remotePreviewStreamRef.current) {
+            setRemoteBridgeStatus("Preview remoto ativo via sincronizacao de frames.");
+          }
+
+          return;
+        }
+
         if (payload.type === "command") {
           if (deviceRole !== "camera" || payload.fromId === deviceId) {
             return;
@@ -1003,6 +1168,23 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   }, [captureStatus, deviceRole, error, integratedMode, liveSessionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!integratedMode || deviceRole !== "camera" || captureStatus !== "preview") {
+      stopRemotePreviewFrameLoop();
+      return;
+    }
+
+    const nextLoopId = previewFrameLoopIdRef.current + 1;
+    previewFrameLoopIdRef.current = nextLoopId;
+    void runRemotePreviewFrameLoop(nextLoopId);
+
+    return () => {
+      if (previewFrameLoopIdRef.current === nextLoopId) {
+        previewFrameLoopIdRef.current += 1;
+      }
+    };
+  }, [captureStatus, deviceRole, integratedMode, previewSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!boardFeaturesEnabled) {
       return;
     }
@@ -1047,9 +1229,9 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       return;
     }
 
-    refreshLinkedStageContext();
+    void refreshLinkedStageContext();
     const intervalId = window.setInterval(() => {
-      refreshLinkedStageContext();
+      void refreshLinkedStageContext();
     }, 1500);
 
     function handleStorage(event: StorageEvent) {
@@ -1058,7 +1240,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       }
 
       if (event.key === null || event.key.includes(linkedStageOption.stageId)) {
-        refreshLinkedStageContext();
+        void refreshLinkedStageContext();
       }
     }
 
@@ -1672,6 +1854,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       await loadDevices();
       setCaptureStatus("preview");
       setPreviewSessionId((current) => current + 1);
+      clearRemotePreviewFrame();
       await broadcastIntegratedState({
         captureStatus: "preview",
         error: "",
@@ -1705,6 +1888,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
   async function stopLocalPreviewSession() {
     await stopLiveSession({ restartBoardMonitor: false });
+    stopRemotePreviewFrameLoop();
     clearRemotePreviewStream();
 
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -1805,7 +1989,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         return;
       }
 
-      const currentLinkedStageContext = refreshLinkedStageContext();
+      const currentLinkedStageContext = await refreshLinkedStageContext();
 
       if (integratedMode && !currentLinkedStageContext) {
         throw new Error(
@@ -1834,9 +2018,16 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
           liveSessionStatus: "running",
           error: "",
         });
-        startCommandRecognition();
-        commandLoopIdRef.current += 1;
-        void runCommandLoop(commandLoopIdRef.current);
+        const browserRecognitionStarted = startCommandRecognition();
+        const localTranscriptionAvailable = await refreshLocalTranscriptionAvailability();
+        if (browserRecognitionStarted && !localTranscriptionAvailable) {
+          setCommandEngineLabel("Escutando comandos pelo navegador; motor local opcional indisponivel");
+        }
+
+        if (localTranscriptionAvailable) {
+          commandLoopIdRef.current += 1;
+          void runCommandLoop(commandLoopIdRef.current);
+        }
         return;
       }
 
@@ -1897,9 +2088,22 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         });
       }
 
-      startCommandRecognition();
+      const browserRecognitionStarted = startCommandRecognition();
+      const localTranscriptionAvailable = await refreshLocalTranscriptionAvailability();
 
-      void runCommandLoop(commandLoopIdRef.current);
+      if (browserRecognitionStarted && !localTranscriptionAvailable) {
+        setCommandEngineLabel("Escutando comandos pelo navegador; motor local opcional indisponivel");
+      }
+
+      if (!browserRecognitionStarted && !localTranscriptionAvailable) {
+        throw new Error(
+          "Nenhum motor de comando esta disponivel neste dispositivo. Ative o reconhecimento do navegador ou configure o motor local.",
+        );
+      }
+
+      if (localTranscriptionAvailable) {
+        void runCommandLoop(commandLoopIdRef.current);
+      }
     } catch (sessionError) {
       setTranscriptError(
         sessionError instanceof Error
@@ -2008,6 +2212,14 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       }
 
       try {
+        const localTranscriptionAvailable = await refreshLocalTranscriptionAvailability();
+
+        if (!localTranscriptionAvailable) {
+          setTranscriptError("");
+          await wait(COMMAND_SAMPLE_DURATION_MS);
+          continue;
+        }
+
         const wavBlob = await captureWaveSample(
           new MediaStream([audioTrack]),
           COMMAND_SAMPLE_DURATION_MS,
@@ -2029,6 +2241,17 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
         handleTranscriptCommand(("text" in data ? data.text : "") ?? "", "whisper");
       } catch (loopError) {
+        if (
+          loopError instanceof Error &&
+          loopError.message.toLowerCase().includes("motor local indisponivel")
+        ) {
+          localTranscriptionAvailableRef.current = false;
+          setTranscriptError("");
+          setCommandEngineLabel("Escutando comandos pelo navegador; motor local opcional indisponivel");
+          await wait(COMMAND_SAMPLE_DURATION_MS);
+          continue;
+        }
+
         setTranscriptError(
           loopError instanceof Error
             ? loopError.message
@@ -3501,6 +3724,13 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       linkedBlindLabel: linkedStageContext?.currentBlindLabel ?? null,
     });
 
+    if (lines.length > 0) {
+      await appendLinkedStageLogEntries([
+        `[${formatDateTime(new Date().toISOString())}] Transcricao sincronizada com ${lines.length} linha(s).`,
+        ...lines,
+      ]);
+    }
+
     sessionTranscriptStartedAtRef.current = "";
     sessionTranscriptLinesRef.current = [];
     await refreshSavedTranscripts();
@@ -3967,6 +4197,16 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                       muted
                       playsInline
                     />
+                    {isRemoteMonitor && remotePreviewFrameUrl && !remotePreviewStreamRef.current ? (
+                      <NextImage
+                        alt="Preview remoto da transmissao"
+                        className="object-cover"
+                        fill
+                        sizes="100vw"
+                        src={remotePreviewFrameUrl}
+                        unoptimized
+                      />
+                    ) : null}
 
                     {boardFeaturesEnabled ? (
                       <div

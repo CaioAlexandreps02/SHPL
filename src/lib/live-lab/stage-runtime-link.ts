@@ -1,9 +1,12 @@
 "use client";
 
 import type { BlindLevel } from "@/lib/domain/types";
-
-export const STAGE_RUNTIME_STORAGE_KEY_PREFIX = "shpl-stage-runtime";
-export const LIVE_LAB_TOTAL_TABLE_SEATS = 8;
+import {
+  buildStageRuntimeStorageKey,
+  normalizeSeatAssignments,
+  normalizeStageRuntimePayload,
+  type StoredStageRuntimePayload,
+} from "@/lib/live-lab/stage-runtime-shared";
 
 export type LiveLinkedSeatAssignment = {
   seatIndex: number;
@@ -31,19 +34,6 @@ export type LiveLinkedStageContext = {
   stageClosed: boolean;
 };
 
-type StoredStageRuntimePayload = {
-  currentLevelIndex?: number;
-  completedMatchDurations?: number[];
-  currentMatchStartedAt?: string | null;
-  currentMatchClosed?: boolean;
-  stageClosedAt?: string | null;
-  seatAssignments?: Array<string | null>;
-};
-
-export function buildStageRuntimeStorageKey(stageId: string) {
-  return `${STAGE_RUNTIME_STORAGE_KEY_PREFIX}-${stageId}`;
-}
-
 export function readLinkedStageContext(
   option: LiveLinkedStageOption,
 ): LiveLinkedStageContext | null {
@@ -58,7 +48,12 @@ export function readLinkedStageContext(
   }
 
   try {
-    const parsed = JSON.parse(rawValue) as StoredStageRuntimePayload;
+    const parsed = normalizeStageRuntimePayload(JSON.parse(rawValue) as StoredStageRuntimePayload);
+
+    if (!parsed) {
+      return null;
+    }
+
     const currentLevelIndex = Math.max(0, parsed.currentLevelIndex ?? 0);
     const currentLevel = option.blindStructure[currentLevelIndex] ?? option.blindStructure[0] ?? null;
     const normalizedSeats = normalizeSeatAssignments(parsed.seatAssignments ?? []).map(
@@ -87,13 +82,70 @@ export function readLinkedStageContext(
   }
 }
 
-function normalizeSeatAssignments(assignments: Array<string | null>) {
-  const nextAssignments = Array.from({ length: LIVE_LAB_TOTAL_TABLE_SEATS }, (_, seatIndex) => {
-    const value = assignments[seatIndex];
-    return typeof value === "string" && value.length > 0 ? value : null;
-  });
+export async function fetchLinkedStageContext(option: LiveLinkedStageOption) {
+  try {
+    const response = await fetch(`/api/shpl-admin/stage-runtime?stageId=${option.stageId}`, {
+      cache: "no-store",
+    });
 
-  return nextAssignments;
+    if (!response.ok) {
+      throw new Error("Falha ao carregar a etapa vinculada.");
+    }
+
+    const payload = (await response.json()) as { runtime?: StoredStageRuntimePayload | null };
+
+    if (payload.runtime) {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(
+          buildStageRuntimeStorageKey(option.stageId),
+          JSON.stringify(payload.runtime),
+        );
+      }
+
+      const serialized = JSON.stringify(payload.runtime);
+      return readLinkedStageContextFromSerialized(option, serialized);
+    }
+  } catch {
+    return readLinkedStageContext(option);
+  }
+
+  return readLinkedStageContext(option);
+}
+
+function readLinkedStageContextFromSerialized(option: LiveLinkedStageOption, rawValue: string) {
+  try {
+    const parsed = normalizeStageRuntimePayload(JSON.parse(rawValue) as StoredStageRuntimePayload);
+
+    if (!parsed) {
+      return null;
+    }
+
+    const currentLevelIndex = Math.max(0, parsed.currentLevelIndex ?? 0);
+    const currentLevel = option.blindStructure[currentLevelIndex] ?? option.blindStructure[0] ?? null;
+    const normalizedSeats = normalizeSeatAssignments(parsed.seatAssignments ?? []).map(
+      (playerId, seatIndex) => ({
+        seatIndex,
+        playerId,
+        playerName: playerId ? option.playerNameById[playerId] ?? null : null,
+      }),
+    );
+    const completedMatchCount = parsed.completedMatchDurations?.length ?? 0;
+    const hasOpenMatch = Boolean(parsed.currentMatchStartedAt) && !parsed.currentMatchClosed;
+
+    return {
+      stageId: option.stageId,
+      stageTitle: option.stageTitle,
+      stageDateLabel: option.stageDateLabel,
+      currentLevelIndex,
+      currentBlindLabel: currentLevel ? buildBlindLabel(currentLevel) : null,
+      currentMatchNumber: Math.max(1, completedMatchCount + (hasOpenMatch ? 1 : 1)),
+      seatAssignments: normalizedSeats,
+      currentMatchClosed: parsed.currentMatchClosed ?? false,
+      stageClosed: Boolean(parsed.stageClosedAt),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function buildBlindLabel(level: BlindLevel) {

@@ -15,6 +15,10 @@ export function calculateMatchPoints(position: number) {
   return 2;
 }
 
+export function buildStagePointsSummary(wins: number, points: number) {
+  return `${wins} / ${points} pontos`;
+}
+
 export function calculateAnnualStagePoints(position: number, leftEarly: boolean) {
   if (leftEarly) return 1;
   if (position === 1) return 10;

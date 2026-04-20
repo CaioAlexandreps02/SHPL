@@ -3,17 +3,24 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 
 import { SHPLNavIcon } from "@/components/shpl-nav-icon";
 import type { AccessRole } from "@/lib/auth/roles";
-import { calculateMatchPoints, compareStageRanking } from "@/lib/domain/rules";
+import {
+  buildStagePointsSummary,
+  calculateMatchPoints,
+  compareStageRanking,
+} from "@/lib/domain/rules";
 import type { BlindLevel, LeagueSnapshot, Stage } from "@/lib/domain/types";
 import {
   LIVE_LAB_TOTAL_TABLE_SEATS,
-  STAGE_RUNTIME_STORAGE_KEY_PREFIX,
-} from "@/lib/live-lab/stage-runtime-link";
+  buildStageRuntimeStorageKey,
+  normalizeSeatAssignments as normalizeSharedSeatAssignments,
+  type StageRuntimePlayerState,
+  type StoredStageRuntimePayload,
+} from "@/lib/live-lab/stage-runtime-shared";
 import { getVisibleShplNavItems, isShplNavItemActive } from "@/lib/navigation/shpl-nav";
 
 type StagePlayerControl = {
@@ -95,6 +102,146 @@ export function StageSetupScreen({
   );
   const previousLevelIndexRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const actionClockExpiredRef = useRef(false);
+  const runtimeHydratedRef = useRef(false);
+  const runtimeSyncInFlightRef = useRef(false);
+  const lastRuntimeSignatureRef = useRef("");
+  const stageLogEnsuredRef = useRef(false);
+
+  const buildRuntimePlayersSnapshot = useCallback((
+    currentPlayers: StagePlayerControl[] = players,
+  ): StageRuntimePlayerState[] => {
+    return currentPlayers.map((player) => ({
+      playerId: player.playerId,
+      playerName: player.playerName,
+      annualPaid: player.annualPaid,
+      dailyPaid: player.dailyPaid,
+      leftStage: player.leftStage,
+      outOfCurrentMatch: player.outOfCurrentMatch,
+      estimatedStack: player.estimatedStack,
+      matchPoints: [...player.matchPoints],
+    }));
+  }, [players]);
+
+  const buildStageRuntimePayload = useCallback((nextUpdatedAt?: string): StoredStageRuntimePayload => {
+    return {
+      actualStageStartedAt,
+      currentMatchStartedAt,
+      matchElapsedSeconds,
+      completedMatchDurations: [...completedMatchDurations],
+      stageClosedAt,
+      currentMatchClosed,
+      currentLevelIndex,
+      seatAssignments: [...seatAssignments],
+      blindLevels: structuredClone(blindLevels),
+      clockSeconds,
+      showActionClock,
+      breakDurationMinutes,
+      breakEveryLevels,
+      remainingSeconds,
+      isRunning,
+      actionClockRemaining,
+      selectedPlayerId,
+      players: buildRuntimePlayersSnapshot(),
+      updatedAt: nextUpdatedAt,
+    };
+  }, [
+    actualStageStartedAt,
+    actionClockRemaining,
+    blindLevels,
+    breakDurationMinutes,
+    breakEveryLevels,
+    buildRuntimePlayersSnapshot,
+    clockSeconds,
+    completedMatchDurations,
+    currentLevelIndex,
+    currentMatchClosed,
+    currentMatchStartedAt,
+    isRunning,
+    matchElapsedSeconds,
+    remainingSeconds,
+    seatAssignments,
+    selectedPlayerId,
+    showActionClock,
+    stageClosedAt,
+  ]);
+
+  function serializeRuntimePayload(payload: StoredStageRuntimePayload) {
+    return JSON.stringify({
+      ...payload,
+      updatedAt: undefined,
+    });
+  }
+
+  function applyStageRuntimePayload(payload: StoredStageRuntimePayload) {
+    setActualStageStartedAt(payload.actualStageStartedAt ?? null);
+    setCurrentMatchStartedAt(payload.currentMatchStartedAt ?? null);
+    setMatchElapsedSeconds(payload.matchElapsedSeconds ?? 0);
+    setCompletedMatchDurations(payload.completedMatchDurations ?? []);
+    setStageClosedAt(payload.stageClosedAt ?? null);
+    setCurrentMatchClosed(payload.currentMatchClosed ?? false);
+    setCurrentLevelIndex(payload.currentLevelIndex ?? 0);
+    setSeatAssignments(normalizeSharedSeatAssignments(payload.seatAssignments ?? []));
+    if (payload.blindLevels?.length) {
+      setBlindLevels(payload.blindLevels);
+    }
+    if (typeof payload.clockSeconds === "number" && payload.clockSeconds > 0) {
+      setClockSeconds(payload.clockSeconds);
+    }
+    setShowActionClock(payload.showActionClock ?? true);
+    setBreakDurationMinutes(Math.max(payload.breakDurationMinutes ?? 0, 0));
+    setBreakEveryLevels(Math.max(payload.breakEveryLevels ?? 0, 0));
+    if (typeof payload.remainingSeconds === "number") {
+      setRemainingSeconds(Math.max(payload.remainingSeconds, 0));
+    }
+    setIsRunning(Boolean(payload.isRunning));
+    setActionClockRemaining(
+      payload.actionClockRemaining === null || payload.actionClockRemaining === undefined
+        ? null
+        : Math.max(payload.actionClockRemaining, 0),
+    );
+    setSelectedPlayerId(payload.selectedPlayerId ?? null);
+    if (payload.players?.length) {
+      setPlayers(
+        payload.players.map((player) => ({
+          playerId: player.playerId,
+          playerName: player.playerName,
+          annualPaid: player.annualPaid,
+          dailyPaid: player.dailyPaid,
+          leftStage: player.leftStage,
+          outOfCurrentMatch: player.outOfCurrentMatch,
+          estimatedStack: player.estimatedStack,
+          matchPoints: [...player.matchPoints],
+        })),
+      );
+    }
+  }
+
+  const appendStageLogEntries = useCallback(
+    async (entries: string[], ensureOnly = false) => {
+      try {
+        await fetch("/api/shpl-admin/stage-log", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            stage: {
+              id: stage.id,
+              title: stage.title,
+              stageDate: stage.stageDate,
+              scheduledStartTime: stage.scheduledStartTime,
+            },
+            entries,
+            ensureOnly,
+          }),
+        });
+      } catch {
+        // Mantem a operacao da mesa mesmo se o TXT falhar temporariamente.
+      }
+    },
+    [stage.id, stage.scheduledStartTime, stage.stageDate, stage.title]
+  );
 
   useEffect(() => {
     let timeoutId: number | undefined;
@@ -160,76 +307,190 @@ export function StageSetupScreen({
   }, [snapshot.blindStructure, snapshot.liveControls.actionClockOptions]);
 
   useEffect(() => {
-    try {
-      const rawRuntime = window.localStorage.getItem(
-        `${STAGE_RUNTIME_STORAGE_KEY_PREFIX}-${stage.id}`
-      );
+    let cancelled = false;
 
-      if (!rawRuntime) {
-        return;
+    async function hydrateStageRuntime() {
+      try {
+        const response = await fetch(`/api/shpl-admin/stage-runtime?stageId=${stage.id}`, {
+          cache: "no-store",
+        });
+
+        if (response.ok) {
+          const payload = (await response.json()) as { runtime?: StoredStageRuntimePayload | null };
+          if (payload.runtime && !cancelled) {
+            const signature = serializeRuntimePayload(payload.runtime);
+            applyStageRuntimePayload(payload.runtime);
+            lastRuntimeSignatureRef.current = signature;
+            window.localStorage.setItem(
+              buildStageRuntimeStorageKey(stage.id),
+              JSON.stringify(payload.runtime),
+            );
+            runtimeHydratedRef.current = true;
+            return;
+          }
+        }
+      } catch {
+        // Fallback local abaixo.
       }
 
-      const parsedRuntime = JSON.parse(rawRuntime) as {
-        actualStageStartedAt?: string | null;
-        currentMatchStartedAt?: string | null;
-        matchElapsedSeconds?: number;
-        completedMatchDurations?: number[];
-        stageClosedAt?: string | null;
-        currentMatchClosed?: boolean;
-        currentLevelIndex?: number;
-        seatAssignments?: Array<string | null>;
-      };
+      try {
+        const rawRuntime = window.localStorage.getItem(buildStageRuntimeStorageKey(stage.id));
 
-      const timeoutId = window.setTimeout(() => {
-        setActualStageStartedAt(parsedRuntime.actualStageStartedAt ?? null);
-        setCurrentMatchStartedAt(parsedRuntime.currentMatchStartedAt ?? null);
-        setMatchElapsedSeconds(parsedRuntime.matchElapsedSeconds ?? 0);
-        setCompletedMatchDurations(parsedRuntime.completedMatchDurations ?? []);
-        setStageClosedAt(parsedRuntime.stageClosedAt ?? null);
-        setCurrentMatchClosed(parsedRuntime.currentMatchClosed ?? false);
-        setCurrentLevelIndex(parsedRuntime.currentLevelIndex ?? 0);
-        setSeatAssignments(
-          normalizeSeatAssignments(parsedRuntime.seatAssignments ?? [])
-        );
-      }, 0);
-
-      return () => {
-        window.clearTimeout(timeoutId);
-      };
-    } catch {
-      return;
+        if (rawRuntime && !cancelled) {
+          const parsedRuntime = JSON.parse(rawRuntime) as StoredStageRuntimePayload;
+          applyStageRuntimePayload(parsedRuntime);
+          lastRuntimeSignatureRef.current = serializeRuntimePayload(parsedRuntime);
+        }
+      } catch {
+        // Sem runtime local valido.
+      } finally {
+        runtimeHydratedRef.current = true;
+      }
     }
+
+    void hydrateStageRuntime();
+
+    return () => {
+      cancelled = true;
+    };
   }, [stage.id]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        `${STAGE_RUNTIME_STORAGE_KEY_PREFIX}-${stage.id}`,
-        JSON.stringify({
-          actualStageStartedAt,
-          currentMatchStartedAt,
-          matchElapsedSeconds,
-          completedMatchDurations,
-          stageClosedAt,
-          currentMatchClosed,
-          currentLevelIndex,
-          seatAssignments,
-        })
-      );
-    } catch {
+    stageLogEnsuredRef.current = false;
+  }, [stage.id]);
+
+  useEffect(() => {
+    if (stageLogEnsuredRef.current) {
       return;
     }
+
+    stageLogEnsuredRef.current = true;
+    void appendStageLogEntries([], true);
+  }, [appendStageLogEntries]);
+
+  useEffect(() => {
+    if (!runtimeHydratedRef.current) {
+      return;
+    }
+
+    const runtimePayload = buildStageRuntimePayload();
+    const signature = serializeRuntimePayload(runtimePayload);
+
+    try {
+      window.localStorage.setItem(buildStageRuntimeStorageKey(stage.id), JSON.stringify(runtimePayload));
+    } catch {
+      // Ignora falhas locais e tenta manter a sincronizacao remota.
+    }
+
+    if (signature === lastRuntimeSignatureRef.current || runtimeSyncInFlightRef.current) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      runtimeSyncInFlightRef.current = true;
+      const payloadWithTimestamp = buildStageRuntimePayload(new Date().toISOString());
+
+      try {
+        const response = await fetch("/api/shpl-admin/stage-runtime", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            stageId: stage.id,
+            runtime: payloadWithTimestamp,
+          }),
+        });
+
+        if (response.ok) {
+          lastRuntimeSignatureRef.current = signature;
+          window.localStorage.setItem(
+            buildStageRuntimeStorageKey(stage.id),
+            JSON.stringify(payloadWithTimestamp),
+          );
+        }
+      } catch {
+        // Mantem o estado local mesmo se a sincronizacao falhar.
+      } finally {
+        runtimeSyncInFlightRef.current = false;
+      }
+    }, isRunning ? 900 : 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
   }, [
     actualStageStartedAt,
+    actionClockRemaining,
+    blindLevels,
+    breakDurationMinutes,
+    breakEveryLevels,
+    clockSeconds,
     completedMatchDurations,
     currentMatchStartedAt,
     currentMatchClosed,
     currentLevelIndex,
+    isRunning,
     matchElapsedSeconds,
+    players,
+    remainingSeconds,
     seatAssignments,
+    selectedPlayerId,
+    showActionClock,
     stageClosedAt,
     stage.id,
+    buildStageRuntimePayload,
   ]);
+
+  useEffect(() => {
+    if (!runtimeHydratedRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function pollRemoteStageRuntime() {
+      try {
+        const response = await fetch(`/api/shpl-admin/stage-runtime?stageId=${stage.id}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as { runtime?: StoredStageRuntimePayload | null };
+
+        if (!payload.runtime || cancelled) {
+          return;
+        }
+
+        const nextSignature = serializeRuntimePayload(payload.runtime);
+
+        if (nextSignature === lastRuntimeSignatureRef.current) {
+          return;
+        }
+
+        applyStageRuntimePayload(payload.runtime);
+        lastRuntimeSignatureRef.current = nextSignature;
+        window.localStorage.setItem(
+          buildStageRuntimeStorageKey(stage.id),
+          JSON.stringify(payload.runtime),
+        );
+      } catch {
+        // Mantem o fluxo local caso a consulta remota falhe.
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void pollRemoteStageRuntime();
+    }, isRunning ? 1500 : 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isRunning, stage.id]);
 
   useEffect(() => {
     if (!isRunning) {
@@ -298,19 +559,28 @@ export function StageSetupScreen({
     }
 
     previousLevelIndexRef.current = currentLevelIndex;
-    playBlindLevelChangedSignal(audioContextRef);
-
     const changedLevel = blindLevels[currentLevelIndex];
 
     if (!changedLevel) {
       return;
     }
 
-    announceTableMessage(`Blind atual ${buildBlindAnnouncement(changedLevel)}.`);
-  }, [blindLevels, currentLevelIndex]);
+    const speechDelayMs = playBlindLevelChangedSignal(audioContextRef);
+    void appendStageLogEntries([
+      formatStageEventLogEntry(`Blind atualizado para ${buildBlindLabel(changedLevel)}.`),
+    ]);
+    const timeoutId = window.setTimeout(() => {
+      announceTableMessage(`Blind atual ${buildBlindAnnouncement(changedLevel)}.`);
+    }, speechDelayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [appendStageLogEntries, blindLevels, currentLevelIndex]);
 
   useEffect(() => {
     if (actionClockRemaining === null) {
+      actionClockExpiredRef.current = false;
       return;
     }
 
@@ -325,6 +595,20 @@ export function StageSetupScreen({
     }, 1000);
 
     return () => window.clearInterval(interval);
+  }, [actionClockRemaining]);
+
+  useEffect(() => {
+    if (actionClockRemaining === null || actionClockRemaining > 0) {
+      actionClockExpiredRef.current = false;
+      return;
+    }
+
+    if (actionClockExpiredRef.current) {
+      return;
+    }
+
+    actionClockExpiredRef.current = true;
+    playActionClockExpiredSignal(audioContextRef);
   }, [actionClockRemaining]);
 
   useEffect(() => {
@@ -385,10 +669,13 @@ export function StageSetupScreen({
   );
   const averageActiveStack = useMemo(
     () =>
-      activeMatchPlayers.length > 0
-        ? Math.round(estimatedStageChips / activeMatchPlayers.length)
-        : 0,
-    [activeMatchPlayers.length, estimatedStageChips]
+      calculateEstimatedAverageActiveStack({
+        estimatedStageChips,
+        activePlayers: activeMatchPlayers,
+        totalEligiblePlayers: eligibleStagePlayers.length,
+        currentLevelIndex,
+      }),
+    [activeMatchPlayers, currentLevelIndex, eligibleStagePlayers.length, estimatedStageChips]
   );
   const averageActiveBigBlinds = useMemo(() => {
     if (!currentLevel?.bigBlind) {
@@ -492,6 +779,65 @@ export function StageSetupScreen({
         ),
     [players]
   );
+  const buildTableSeatSummary = useCallback(
+    (currentAssignments: Array<string | null> = seatAssignments) =>
+      normalizeSharedSeatAssignments(currentAssignments)
+        .map((playerId, seatIndex) => {
+          if (!playerId) {
+            return `Lugar ${seatIndex + 1}: vazio`;
+          }
+
+          const assignedPlayer =
+            players.find((player) => player.playerId === playerId)?.playerName ?? "Jogador indefinido";
+          return `Lugar ${seatIndex + 1}: ${assignedPlayer}`;
+        })
+        .join(" | "),
+    [players, seatAssignments]
+  );
+  const closeCurrentMatchAsFinished = useCallback(
+    (notice: string) => {
+      setIsRunning(false);
+      setActionClockRemaining(null);
+      setCurrentMatchClosed(true);
+      setCompletedMatchDurations((currentDurations) => {
+        if (currentDurations.length > currentMatchIndex) {
+          return currentDurations;
+        }
+
+        return [...currentDurations, matchElapsedSeconds];
+      });
+      setStageNotice(notice);
+    },
+    [currentMatchIndex, matchElapsedSeconds]
+  );
+
+  useEffect(() => {
+    if (
+      stageClosedAt ||
+      currentMatchClosed ||
+      currentMatchStartedAt === null ||
+      activeMatchPlayers.length > 0
+    ) {
+      return;
+    }
+
+    closeCurrentMatchAsFinished(
+      "Todos os jogadores sairam da partida atual. Inicie uma nova partida quando quiser continuar."
+    );
+    void appendStageLogEntries([
+      formatStageEventLogEntry(
+        `Partida ${currentMatchIndex + 1} encerrada automaticamente porque nao restaram jogadores ativos.`,
+      ),
+    ]);
+  }, [
+    activeMatchPlayers.length,
+    appendStageLogEntries,
+    closeCurrentMatchAsFinished,
+    currentMatchClosed,
+    currentMatchIndex,
+    currentMatchStartedAt,
+    stageClosedAt,
+  ]);
 
   const nextBreakLabel = useMemo(() => {
     if (!breakDurationMinutes || !breakEveryLevels || !currentLevel) {
@@ -515,9 +861,22 @@ export function StageSetupScreen({
 
   function handleSetCurrentLevel(nextIndex: number) {
     const boundedIndex = Math.max(0, Math.min(nextIndex, Math.max(blindLevels.length - 1, 0)));
+    if (boundedIndex === currentLevelIndex) {
+      return;
+    }
+
+    const nextLevel = blindLevels[boundedIndex];
     setCurrentLevelIndex(boundedIndex);
-    setRemainingSeconds((blindLevels[boundedIndex]?.durationMinutes ?? 0) * 60);
-    setIsRunning(false);
+    setStageNotice(
+      nextLevel
+        ? `Blind ajustado manualmente para ${buildBlindLabel(nextLevel)}.`
+        : "Blind ajustado manualmente.",
+    );
+    if (nextLevel) {
+      void appendStageLogEntries([
+        formatStageEventLogEntry(`Blind ajustado manualmente para ${buildBlindLabel(nextLevel)}.`),
+      ]);
+    }
   }
 
   function handleStartTimer() {
@@ -558,16 +917,12 @@ export function StageSetupScreen({
       return;
     }
 
-    setIsRunning(false);
-    setCurrentMatchClosed(true);
-    setCompletedMatchDurations((currentDurations) => {
-      if (currentDurations.length > currentMatchIndex) {
-        return currentDurations;
-      }
-
-      return [...currentDurations, matchElapsedSeconds];
-    });
-    setStageNotice("Partida encerrada com sucesso. Agora voce pode iniciar a proxima partida.");
+    closeCurrentMatchAsFinished(
+      "Partida encerrada com sucesso. Agora voce pode iniciar a proxima partida."
+    );
+    void appendStageLogEntries([
+      formatStageEventLogEntry(`Partida ${currentMatchIndex + 1} encerrada manualmente.`),
+    ]);
   }
 
   function handleStartNextMatch() {
@@ -607,11 +962,16 @@ export function StageSetupScreen({
     setCurrentMatchStartedAt((currentValue) => currentValue ?? nowIso);
     setStageNotice("Assentos confirmados. Partida iniciada.");
     setIsRunning(true);
+    void appendStageLogEntries([
+      formatStageEventLogEntry(`Partida ${currentMatchIndex + 1} iniciada.`),
+      formatStageEventLogEntry(
+        `Blind atual ${currentLevel ? buildBlindLabel(currentLevel) : "nao definido"}.`
+      ),
+      formatStageEventLogEntry(`Mesa: ${buildTableSeatSummary()}.`),
+    ]);
   }
 
   function performStartNextMatch() {
-    const nowIso = new Date().toISOString();
-
     setPlayerActionHistory([]);
     setPlayers((currentPlayers) =>
       currentPlayers.map((player) => ({
@@ -620,20 +980,35 @@ export function StageSetupScreen({
         matchPoints: [...player.matchPoints, 0],
       }))
     );
-    setCurrentMatchStartedAt(nowIso);
+    setCurrentMatchStartedAt(null);
     setMatchElapsedSeconds(0);
     setCurrentLevelIndex(0);
     setRemainingSeconds((blindLevels[0]?.durationMinutes ?? 0) * 60);
+    setActionClockRemaining(null);
     setCurrentMatchClosed(false);
-    setStageNotice("Nova partida preparada e iniciada com os assentos confirmados.");
-    setIsRunning(true);
+    setStageNotice("Nova partida preparada. Quando quiser, aperte iniciar para o tempo comecar.");
+    setIsRunning(false);
+    void appendStageLogEntries([
+      formatStageEventLogEntry(`Nova partida preparada: ${currentMatchIndex + 2}a partida.`),
+      formatStageEventLogEntry(
+        `Blind reiniciado para ${blindLevels[0] ? buildBlindLabel(blindLevels[0]) : "nao definido"}.`
+      ),
+      formatStageEventLogEntry(`Mesa: ${buildTableSeatSummary()}.`),
+    ]);
   }
 
   function handleDirectSeatAssignmentChange(seatIndex: number, playerId: string) {
     const normalizedPlayerId = playerId || null;
+    const previousPlayerId = seatAssignments[seatIndex];
+    const previousPlayerName = previousPlayerId
+      ? players.find((player) => player.playerId === previousPlayerId)?.playerName ?? "Jogador indefinido"
+      : "vazio";
+    const nextPlayerName = normalizedPlayerId
+      ? players.find((player) => player.playerId === normalizedPlayerId)?.playerName ?? "Jogador indefinido"
+      : "vazio";
     pushPlayerActionSnapshot();
     setSeatAssignments((currentAssignments) => {
-      const nextAssignments = normalizeSeatAssignments([...currentAssignments]);
+      const nextAssignments = normalizeSharedSeatAssignments([...currentAssignments]);
 
       for (let index = 0; index < nextAssignments.length; index += 1) {
         if (index !== seatIndex && nextAssignments[index] === normalizedPlayerId) {
@@ -649,6 +1024,11 @@ export function StageSetupScreen({
         ? "Posicoes da mesa atualizadas e sincronizadas para a partida em andamento."
         : "Posicoes da mesa atualizadas com sucesso."
     );
+    void appendStageLogEntries([
+      formatStageEventLogEntry(
+        `Posicao da mesa alterada: lugar ${seatIndex + 1} foi de ${previousPlayerName} para ${nextPlayerName}.`
+      ),
+    ]);
   }
 
   function updateSelectedPlayer(updater: (player: StagePlayerControl) => StagePlayerControl) {
@@ -683,6 +1063,9 @@ export function StageSetupScreen({
     updateSelectedPlayer((player) => ({ ...player, annualPaid: true }));
     setStageNotice("Buy-in anual confirmado.");
     if (playerName) {
+      void appendStageLogEntries([formatStageEventLogEntry(`${playerName} deu buy-in anual.`)]);
+    }
+    if (playerName) {
       announceTableMessage(`${playerName} deu buy-in anual.`);
     }
   }
@@ -695,17 +1078,44 @@ export function StageSetupScreen({
 
     const playerName = selectedPlayer.playerName;
     pushPlayerActionSnapshot();
-    updateSelectedPlayer((player) => ({ ...player, dailyPaid: true }));
-    setStageNotice("Buy-in do dia confirmado.");
+    updateSelectedPlayer((player) => ({
+      ...player,
+      dailyPaid: true,
+      outOfCurrentMatch:
+        currentMatchStartedAt && !currentMatchClosed
+          ? false
+          : player.outOfCurrentMatch,
+    }));
+    setStageNotice(
+      currentMatchStartedAt && !currentMatchClosed
+        ? "Buy-in do dia confirmado. O jogador ja pode entrar na partida atual e ocupar um lugar na mesa."
+        : "Buy-in do dia confirmado."
+    );
+    void appendStageLogEntries([formatStageEventLogEntry(`${playerName} deu buy-in do dia.`)]);
     announceTableMessage(`${playerName} deu buy-in do dia.`);
   }
 
   function handleConfirmBothBuyIns() {
     const playerName = selectedPlayer?.playerName;
     pushPlayerActionSnapshot();
-    updateSelectedPlayer((player) => ({ ...player, annualPaid: true, dailyPaid: true }));
-    setStageNotice("Buy-in anual e do dia confirmados.");
+    updateSelectedPlayer((player) => ({
+      ...player,
+      annualPaid: true,
+      dailyPaid: true,
+      outOfCurrentMatch:
+        currentMatchStartedAt && !currentMatchClosed
+          ? false
+          : player.outOfCurrentMatch,
+    }));
+    setStageNotice(
+      currentMatchStartedAt && !currentMatchClosed
+        ? "Buy-in anual e do dia confirmados. O jogador ja pode entrar na partida atual e ocupar um lugar na mesa."
+        : "Buy-in anual e do dia confirmados."
+    );
     if (playerName) {
+      void appendStageLogEntries([
+        formatStageEventLogEntry(`${playerName} deu buy-in anual e do dia.`),
+      ]);
       announceTableMessage(`${playerName} deu buy-in anual e do dia.`);
     }
   }
@@ -813,19 +1223,16 @@ export function StageSetupScreen({
       }
 
         return nextPlayers;
-      });
+    });
 
     if (winnerName) {
-      setIsRunning(false);
-      setCurrentMatchClosed(true);
-      setCompletedMatchDurations((currentDurations) => {
-        if (currentDurations.length > currentMatchIndex) {
-          return currentDurations;
-        }
-
-        return [...currentDurations, matchElapsedSeconds];
-      });
-      setStageNotice(`${winnerName} ficou sozinho na partida e assumiu automaticamente o 1o lugar.`);
+      closeCurrentMatchAsFinished(
+        `${winnerName} ficou sozinho na partida e assumiu automaticamente o 1o lugar.`
+      );
+      void appendStageLogEntries([
+        formatStageEventLogEntry(`${selectedPlayer.playerName} saiu da partida.`),
+        formatStageEventLogEntry(`${winnerName} ficou automaticamente em primeiro lugar.`),
+      ]);
       announceTableMessage(
         `${selectedPlayer.playerName} saiu da partida. ${winnerName} ficou em primeiro lugar.`
       );
@@ -833,6 +1240,9 @@ export function StageSetupScreen({
     }
 
     setStageNotice(`${selectedPlayer.playerName} saiu da partida atual.`);
+    void appendStageLogEntries([
+      formatStageEventLogEntry(`${selectedPlayer.playerName} saiu da partida atual.`),
+    ]);
     announceTableMessage(`${selectedPlayer.playerName} saiu da partida.`);
   }
 
@@ -842,20 +1252,78 @@ export function StageSetupScreen({
     }
 
     pushPlayerActionSnapshot();
-    setPlayers((currentPlayers) =>
-      currentPlayers.map((player) => {
+    let winnerName: string | null = null;
+
+    setPlayers((currentPlayers) => {
+      const redistributedPlayers = redistributeStageExitStacks(currentPlayers, selectedPlayer.playerId);
+
+      const nextPlayers = redistributedPlayers.map((player) => {
         if (player.playerId !== selectedPlayer.playerId) {
           return player;
         }
+
+        const nextMatchPoints = player.matchPoints.map(() => 0);
+        nextMatchPoints[currentMatchIndex] = 1;
 
         return {
           ...player,
           leftStage: true,
           outOfCurrentMatch: true,
+          estimatedStack: 0,
+          matchPoints: nextMatchPoints,
         };
-        })
+      });
+
+      const remainingPlayers = nextPlayers.filter(
+        (player) =>
+          player.annualPaid &&
+          player.dailyPaid &&
+          !player.leftStage &&
+          !player.outOfCurrentMatch
       );
-    setStageNotice(`${selectedPlayer.playerName} saiu da etapa.`);
+
+      if (remainingPlayers.length === 1) {
+        const winnerId = remainingPlayers[0].playerId;
+        winnerName = remainingPlayers[0].playerName;
+
+        return nextPlayers.map((player) => {
+          if (player.playerId !== winnerId) {
+            return player;
+          }
+
+          const nextMatchPoints = [...player.matchPoints];
+          nextMatchPoints[currentMatchIndex] = calculateMatchPoints(1);
+
+          return {
+            ...player,
+            outOfCurrentMatch: true,
+            matchPoints: nextMatchPoints,
+          };
+        });
+      }
+
+      return nextPlayers;
+    });
+
+    if (winnerName) {
+      closeCurrentMatchAsFinished(
+        `${selectedPlayer.playerName} saiu da etapa. ${winnerName} ficou automaticamente em primeiro lugar.`
+      );
+      void appendStageLogEntries([
+        formatStageEventLogEntry(`${selectedPlayer.playerName} saiu da etapa.`),
+        formatStageEventLogEntry(`${winnerName} ficou automaticamente em primeiro lugar.`),
+      ]);
+      announceTableMessage(`${selectedPlayer.playerName} saiu da etapa. ${winnerName} ficou em primeiro lugar.`);
+      return;
+    }
+
+    setStageNotice(`${selectedPlayer.playerName} saiu da etapa e teve a pontuacao ajustada para 1.`);
+    void appendStageLogEntries([
+      formatStageEventLogEntry(`${selectedPlayer.playerName} saiu da etapa.`),
+      formatStageEventLogEntry(
+        `${selectedPlayer.playerName} teve a pontuacao da etapa ajustada para 1 ponto.`
+      ),
+    ]);
     announceTableMessage(`${selectedPlayer.playerName} saiu da etapa.`);
   }
 
@@ -873,7 +1341,7 @@ export function StageSetupScreen({
       setCurrentMatchClosed(previousSnapshot.currentMatchClosed);
       setCompletedMatchDurations(previousSnapshot.completedMatchDurations);
       setIsRunning(previousSnapshot.isRunning);
-      setSeatAssignments(previousSnapshot.seatAssignments);
+      setSeatAssignments(normalizeSharedSeatAssignments(previousSnapshot.seatAssignments));
       setStageNotice("Ultima acao desfeita.");
       return currentHistory.slice(0, -1);
     });
@@ -935,12 +1403,15 @@ export function StageSetupScreen({
       setStageClosedAt(nowIso);
       setShowCloseStageConfirm(false);
       setIsRunning(false);
+      await appendStageLogEntries([
+        formatStageEventLogEntry(`Etapa encerrada em ${formatDateTime(nowIso)}.`),
+      ]);
       setStageNotice(
         payload.isTestStage
           ? "Etapa de teste encerrada sem impactar ranking, historico oficial ou pote anual."
           : "Etapa encerrada com confirmacao administrativa."
       );
-      window.localStorage.removeItem(`${STAGE_RUNTIME_STORAGE_KEY_PREFIX}-${stage.id}`);
+      window.localStorage.removeItem(buildStageRuntimeStorageKey(stage.id));
       router.push(payload.isTestStage ? "/shpl-2026/etapas" : `/shpl-2026/ranking?stage=${stage.id}`);
       router.refresh();
     } catch (error) {
@@ -978,8 +1449,8 @@ export function StageSetupScreen({
     }
 
     return isSelected
-      ? "border-[rgba(255,208,101,0.22)] bg-[rgba(255,255,255,0.06)]"
-      : "border-[rgba(255,208,101,0.1)] bg-[rgba(255,255,255,0.03)]";
+      ? "border-[rgba(188,198,210,0.28)] bg-[rgba(141,153,166,0.16)]"
+      : "border-[rgba(160,170,182,0.14)] bg-[rgba(141,153,166,0.08)]";
   }
 
   return (
@@ -1140,7 +1611,16 @@ export function StageSetupScreen({
                 <button className={timerButtonClassName} disabled={!canCloseCurrentMatch} onClick={handleCloseCurrentMatch} type="button">
                   ENCERRAR PARTIDA
                 </button>
-                <button className={timerButtonClassName} disabled={!canStartNextMatch} onClick={handleStartNextMatch} type="button">
+                <button
+                  className={`${timerButtonClassName} ${
+                    canStartNextMatch
+                      ? "border-[rgba(129,211,120,0.34)] bg-[linear-gradient(180deg,#b9f27a_0%,#5f9f24_100%)] text-[#112105] shadow-[0_12px_28px_rgba(129,211,120,0.26)]"
+                      : ""
+                  }`}
+                  disabled={!canStartNextMatch}
+                  onClick={handleStartNextMatch}
+                  type="button"
+                >
                   INICIAR PROXIMA PARTIDA
                 </button>
                 {showActionClock ? (
@@ -1232,8 +1712,8 @@ export function StageSetupScreen({
                           {matchIndex + 1}a partida
                         </th>
                       ))}
-                      <th className="min-w-[120px] border-b border-[rgba(255,208,101,0.12)] px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.22em] text-[rgba(255,236,184,0.92)]">
-                        Total
+                      <th className="min-w-[160px] border-b border-[rgba(255,208,101,0.12)] px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.22em] text-[rgba(255,236,184,0.92)]">
+                        Vitorias / Pontos
                       </th>
                     </tr>
                   </thead>
@@ -1268,8 +1748,8 @@ export function StageSetupScreen({
                               {points}
                             </td>
                           ))}
-                          <td className="border-b border-[rgba(255,208,101,0.1)] px-4 py-3 text-center text-lg font-semibold text-[rgba(255,236,184,0.96)]">
-                            {player.totalPoints}
+                          <td className="border-b border-[rgba(255,208,101,0.1)] px-4 py-3 text-center text-base font-semibold text-[rgba(255,236,184,0.96)]">
+                            {buildStagePointsSummary(player.wins, player.totalPoints)}
                           </td>
                         </tr>
                       );
@@ -1325,6 +1805,10 @@ export function StageSetupScreen({
                       Legenda de cores
                     </p>
                     <div className="mt-3 grid gap-2">
+                      <LegendRow
+                        colorClassName="bg-[rgba(141,153,166,0.18)] border-[rgba(160,170,182,0.32)]"
+                        label="Cinza: ainda nao deu buy-in"
+                      />
                       <LegendRow
                         colorClassName="bg-[rgba(255,208,101,0.16)] border-[rgba(255,208,101,0.3)]"
                         label="Amarelo: buy-in anual pago"
@@ -1481,7 +1965,7 @@ export function StageSetupScreen({
                 <InfoTile
                   label="Stack medio dos vivos"
                   value={formatStackValue(averageActiveStack)}
-                  helper={`aprox. ${averageActiveBigBlinds} BB`}
+                  helper={`aprox. ${averageActiveBigBlinds} BB com concentracao estimada`}
                 />
               </div>
 
@@ -1521,15 +2005,37 @@ export function StageSetupScreen({
       </div>
 
       {actionClockRemaining !== null ? (
-        <div className="fixed bottom-6 right-6 z-40 rounded-[1.25rem] border border-[rgba(129,196,255,0.24)] bg-[rgba(10,29,44,0.92)] px-5 py-4 shadow-[0_16px_34px_rgba(0,0,0,0.28)]">
-          <p className="text-xs uppercase tracking-[0.22em] text-[rgba(202,230,255,0.62)]">
+        <div
+          className={`fixed bottom-6 right-6 z-40 rounded-[1.25rem] px-5 py-4 shadow-[0_16px_34px_rgba(0,0,0,0.28)] ${
+            actionClockRemaining === 0
+              ? "border border-[rgba(255,102,102,0.34)] bg-[rgba(88,16,16,0.94)]"
+              : "border border-[rgba(129,196,255,0.24)] bg-[rgba(10,29,44,0.92)]"
+          }`}
+        >
+          <p
+            className={`text-xs uppercase tracking-[0.22em] ${
+              actionClockRemaining === 0
+                ? "text-[rgba(255,214,214,0.72)]"
+                : "text-[rgba(202,230,255,0.62)]"
+            }`}
+          >
             Cronometro de acao
           </p>
-          <p className="mt-2 text-4xl font-black text-[rgba(220,239,255,0.98)]">
+          <p
+            className={`mt-2 text-4xl font-black ${
+              actionClockRemaining === 0
+                ? "text-[rgba(255,238,238,0.98)]"
+                : "text-[rgba(220,239,255,0.98)]"
+            }`}
+          >
             {formatClock(actionClockRemaining)}
           </p>
           <button
-            className="mt-3 rounded-[0.85rem] border border-[rgba(129,196,255,0.22)] bg-[rgba(129,196,255,0.1)] px-4 py-2 text-sm font-semibold text-[rgba(220,239,255,0.96)]"
+            className={`mt-3 rounded-[0.85rem] px-4 py-2 text-sm font-semibold ${
+              actionClockRemaining === 0
+                ? "border border-[rgba(255,132,132,0.26)] bg-[rgba(255,132,132,0.14)] text-[rgba(255,232,232,0.96)]"
+                : "border border-[rgba(129,196,255,0.22)] bg-[rgba(129,196,255,0.1)] text-[rgba(220,239,255,0.96)]"
+            }`}
             onClick={() => setActionClockRemaining(null)}
             type="button"
           >
@@ -1626,8 +2132,99 @@ function buildPlayerStatus(player: StagePlayerControl) {
   return "Aguardando confirmacao de buy-in";
 }
 
-function normalizeSeatAssignments(assignments: Array<string | null>) {
-  return Array.from({ length: TOTAL_TABLE_SEATS }, (_, index) => assignments[index] ?? null);
+function redistributeStageExitStacks(
+  players: StagePlayerControl[],
+  leavingPlayerId: string,
+) {
+  const leavingPlayer = players.find((player) => player.playerId === leavingPlayerId);
+
+  if (!leavingPlayer || !leavingPlayer.annualPaid || !leavingPlayer.dailyPaid) {
+    return players;
+  }
+
+  const leavingStack = Math.max(leavingPlayer.estimatedStack || 0, 0);
+
+  if (leavingStack <= 0) {
+    return players;
+  }
+
+  const recipients = players
+    .filter(
+      (player) =>
+        player.playerId !== leavingPlayerId &&
+        player.annualPaid &&
+        player.dailyPaid &&
+        !player.leftStage,
+    )
+    .sort((left, right) => {
+      if (left.outOfCurrentMatch !== right.outOfCurrentMatch) {
+        return Number(left.outOfCurrentMatch) - Number(right.outOfCurrentMatch);
+      }
+
+      return right.estimatedStack - left.estimatedStack;
+    });
+
+  if (recipients.length === 0) {
+    return players;
+  }
+
+  const redistributedByPlayerId = new Map<string, number>();
+
+  if (recipients.length === 1) {
+    redistributedByPlayerId.set(recipients[0].playerId, leavingStack);
+  } else {
+    const firstShare = Math.round(leavingStack * 0.7);
+    redistributedByPlayerId.set(recipients[0].playerId, firstShare);
+    redistributedByPlayerId.set(recipients[1].playerId, leavingStack - firstShare);
+  }
+
+  return players.map((player) => ({
+    ...player,
+    estimatedStack:
+      player.playerId === leavingPlayerId
+        ? 0
+        : player.estimatedStack + (redistributedByPlayerId.get(player.playerId) ?? 0),
+  }));
+}
+
+function calculateEstimatedAverageActiveStack({
+  estimatedStageChips,
+  activePlayers,
+  totalEligiblePlayers,
+  currentLevelIndex,
+}: {
+  estimatedStageChips: number;
+  activePlayers: StagePlayerControl[];
+  totalEligiblePlayers: number;
+  currentLevelIndex: number;
+}) {
+  if (activePlayers.length === 0) {
+    return 0;
+  }
+
+  if (activePlayers.length === 1) {
+    return Math.round(Math.max(estimatedStageChips, activePlayers[0].estimatedStack || 0, 0));
+  }
+
+  const baseAverage = estimatedStageChips / activePlayers.length;
+  const eliminatedPlayers = Math.max(totalEligiblePlayers - activePlayers.length, 0);
+  const levelPressure = Math.min(currentLevelIndex * 0.035, 0.18);
+  const eliminationPressure = Math.min(eliminatedPlayers * 0.055, 0.24);
+  const finalTablePressure =
+    activePlayers.length <= 2 ? 0.16 : activePlayers.length <= 4 ? 0.1 : 0.05;
+  const observedStacks = activePlayers
+    .map((player) => Math.max(player.estimatedStack || 0, 0))
+    .sort((left, right) => right - left);
+  const observedLeaderBias =
+    observedStacks.length > 1
+      ? Math.max((observedStacks[0] - observedStacks[1]) / Math.max(observedStacks[0], 1), 0)
+      : 0;
+  const totalBias = Math.min(
+    levelPressure + eliminationPressure + finalTablePressure + observedLeaderBias * 0.08,
+    0.32,
+  );
+
+  return Math.round(baseAverage * (1 + totalBias));
 }
 
 function buildSeatPlayerOptions(
@@ -1677,7 +2274,7 @@ function TableSeatMap({
       <div className="absolute h-[52%] w-[84%] rounded-full border-[3px] border-[rgba(255,208,101,0.22)] bg-[radial-gradient(circle_at_center,rgba(20,92,57,0.8),rgba(8,34,24,0.96)_70%)] shadow-[inset_0_0_0_1px_rgba(255,208,101,0.06)]" />
       <div className="absolute h-[34%] w-[62%] rounded-full border border-[rgba(255,208,101,0.12)] bg-[rgba(5,15,11,0.34)]" />
 
-      {normalizeSeatAssignments(seatAssignments).map((playerId, seatIndex) => {
+      {normalizeSharedSeatAssignments(seatAssignments).map((playerId, seatIndex) => {
         const seatPosition = getSeatPosition(seatIndex);
         const playerName = playerId ? seatLabelsByPlayerId[playerId] ?? "Selecionar" : "Selecionar";
         const isSelected = highlightedSeatIndex === seatIndex;
@@ -1742,6 +2339,19 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatStageEventLogEntry(message: string, occurredAt = new Date()) {
+  const timestamp = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(occurredAt);
+
+  return `[${timestamp}] ${message}`;
+}
+
 function announceTableMessage(message: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
     return;
@@ -1763,9 +2373,9 @@ function announceTableMessage(message: string) {
   window.speechSynthesis.speak(utterance);
 }
 
-function playBlindLevelChangedSignal(audioContextRef: MutableRefObject<AudioContext | null>) {
+function ensureSharedAudioContext(audioContextRef: MutableRefObject<AudioContext | null>) {
   if (typeof window === "undefined") {
-    return;
+    return null;
   }
 
   const AudioContextConstructor =
@@ -1773,7 +2383,7 @@ function playBlindLevelChangedSignal(audioContextRef: MutableRefObject<AudioCont
     (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 
   if (!AudioContextConstructor) {
-    return;
+    return null;
   }
 
   const audioContext = audioContextRef.current ?? new AudioContextConstructor();
@@ -1783,23 +2393,71 @@ function playBlindLevelChangedSignal(audioContextRef: MutableRefObject<AudioCont
     void audioContext.resume();
   }
 
+  return audioContext;
+}
+
+function playBlindLevelChangedSignal(audioContextRef: MutableRefObject<AudioContext | null>) {
+  const audioContext = ensureSharedAudioContext(audioContextRef);
+
+  if (!audioContext) {
+    return 1450;
+  }
+
+  const startAt = audioContext.currentTime;
+  const totalDurationSeconds = 1.45;
+  const toneSequence = [
+    { frequency: 720, duration: 0.34 },
+    { frequency: 840, duration: 0.34 },
+    { frequency: 640, duration: 0.52 },
+  ];
+
+  let cursor = startAt;
+
+  toneSequence.forEach((tone) => {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(tone.frequency, cursor);
+    gain.gain.setValueAtTime(0.0001, cursor);
+    gain.gain.exponentialRampToValueAtTime(0.18, cursor + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, cursor + tone.duration);
+
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start(cursor);
+    oscillator.stop(cursor + tone.duration + 0.02);
+
+    cursor += tone.duration;
+  });
+
+  return Math.round(totalDurationSeconds * 1000) + 120;
+}
+
+function playActionClockExpiredSignal(audioContextRef: MutableRefObject<AudioContext | null>) {
+  const audioContext = ensureSharedAudioContext(audioContextRef);
+
+  if (!audioContext) {
+    return;
+  }
+
+  const startAt = audioContext.currentTime;
   const oscillator = audioContext.createOscillator();
   const gain = audioContext.createGain();
-  const startAt = audioContext.currentTime;
 
-  oscillator.type = "sine";
-  oscillator.frequency.setValueAtTime(740, startAt);
-  oscillator.frequency.linearRampToValueAtTime(880, startAt + 0.55);
-  oscillator.frequency.linearRampToValueAtTime(660, startAt + 1.1);
+  oscillator.type = "square";
+  oscillator.frequency.setValueAtTime(1180, startAt);
+  oscillator.frequency.linearRampToValueAtTime(920, startAt + 0.18);
+  oscillator.frequency.linearRampToValueAtTime(1180, startAt + 0.36);
 
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(0.18, startAt + 0.08);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 1.25);
+  gain.gain.exponentialRampToValueAtTime(0.22, startAt + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.42);
 
   oscillator.connect(gain);
   gain.connect(audioContext.destination);
   oscillator.start(startAt);
-  oscillator.stop(startAt + 1.28);
+  oscillator.stop(startAt + 0.44);
 }
 
 function buildBlindAnnouncement(level: BlindLevel) {
@@ -1843,7 +2501,7 @@ const activeSideButtonClassName =
   "border-[rgba(255,208,101,0.48)] bg-[linear-gradient(180deg,rgba(255,187,39,0.18),rgba(255,187,39,0.06))] text-[rgba(255,244,214,0.98)] shadow-[0_0_0_1px_rgba(255,208,101,0.1)]";
 
 const timerButtonClassName =
-  "flex min-h-14 min-w-[90px] items-center justify-center rounded-[0.95rem] border border-[rgba(255,208,101,0.24)] bg-[linear-gradient(180deg,#ffd54e_0%,#c88807_100%)] px-4 py-3 text-center text-[0.68rem] font-black tracking-[0.14em] text-[#2a1a00] shadow-[0_10px_20px_rgba(255,183,32,0.18)] transition hover:brightness-110";
+  "flex min-h-14 min-w-[90px] items-center justify-center rounded-[0.95rem] border border-[rgba(255,208,101,0.24)] bg-[linear-gradient(180deg,#ffd54e_0%,#c88807_100%)] px-4 py-3 text-center text-[0.68rem] font-black tracking-[0.14em] text-[#2a1a00] shadow-[0_10px_20px_rgba(255,183,32,0.18)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:brightness-100";
 
 const compactActionButtonClassName =
   "h-10 rounded-[0.9rem] border border-[rgba(255,208,101,0.18)] bg-[rgba(255,255,255,0.03)] px-3 text-xs font-semibold text-[rgba(255,236,184,0.96)] transition hover:border-[rgba(255,208,101,0.26)] hover:bg-[rgba(255,255,255,0.05)] disabled:cursor-not-allowed disabled:opacity-50";

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import { SHPLAnnualClassification } from "@/components/shpl-annual-classification";
 import { PlayerAvatar } from "@/components/player-avatar";
-import { compareStageRanking } from "@/lib/domain/rules";
+import { buildStagePointsSummary, compareStageRanking } from "@/lib/domain/rules";
 import type { LeagueSnapshot } from "@/lib/domain/types";
 
 export function SHPLRankingPage({
@@ -195,7 +195,7 @@ export function SHPLRankingPage({
                       </th>
                     ))}
                     <th className="border-b border-[rgba(255,208,101,0.1)] px-4 py-3 text-center text-sm font-semibold uppercase tracking-[0.18em] text-[rgba(255,236,184,0.82)]">
-                      Soma
+                      Vitorias / Pontos
                     </th>
                   </tr>
                 </thead>
@@ -230,8 +230,8 @@ export function SHPLRankingPage({
                           {points}
                         </td>
                       ))}
-                      <td className="border-b border-[rgba(255,208,101,0.1)] px-4 py-3 text-center text-lg font-semibold text-[rgba(255,236,184,0.96)]">
-                        {entry.totalPoints}
+                      <td className="border-b border-[rgba(255,208,101,0.1)] px-4 py-3 text-center text-base font-semibold text-[rgba(255,236,184,0.96)]">
+                        {buildStagePointsSummary(entry.wins, entry.totalPoints)}
                       </td>
                     </tr>
                   ))}

@@ -31,6 +31,8 @@ build-full.log
 # misc
 .DS_Store
 *.pem
+data/stage-runtime-*.json
+data/stage-logs/
 
 # debug
 npm-debug.log*
