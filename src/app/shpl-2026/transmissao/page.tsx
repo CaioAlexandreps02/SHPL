@@ -65,13 +65,17 @@ function buildTransmissionStageOptions(snapshot: LeagueSnapshot) {
 
   register(
     snapshot.currentStage.id,
-    snapshot.currentStage.title,
+    snapshot.currentStage.isTest ? `${snapshot.currentStage.title} (Teste)` : snapshot.currentStage.title,
     snapshot.currentStage.stageDateLabel,
   );
 
   snapshot.upcomingStages.forEach((stage) => {
     if (stage.status !== "finished") {
-      register(stage.id, stage.title, stage.stageDateLabel);
+      register(
+        stage.id,
+        stage.isTest ? `${stage.title} (Teste)` : stage.title,
+        stage.stageDateLabel
+      );
     }
   });
 

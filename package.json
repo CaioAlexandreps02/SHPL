@@ -2,8 +2,11 @@
   "name": "shpl-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20 <24"
+  },
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev-windows.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint src"

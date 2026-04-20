@@ -21,6 +21,8 @@ export type StoredStageRecord = {
   title: string;
   stageDate: string;
   status: StageStatus;
+  scheduledStartTime?: string;
+  isTest?: boolean;
 };
 
 type AdminStoreData = {
@@ -31,6 +33,11 @@ type AdminStoreData = {
 const adminStoreDocumentName = "demo-admin-store.json";
 const DEFAULT_ADMIN_EMAIL = "caioporto100@gmail.com";
 const DEFAULT_ADMIN_NAME = "Caio Alexandre";
+const DEFAULT_STAGE_START_TIME = "20:00";
+const TEST_STAGE_ID = "stage-test-2026-04-20";
+const TEST_STAGE_DATE = "2026-04-20";
+const TEST_STAGE_TITLE = "Etapa Teste - Homologacao";
+const TEST_STAGE_START_TIME = "19:00";
 
 function buildDefaultAdminStore(): AdminStoreData {
   const snapshot = createMockSnapshot();
@@ -62,12 +69,16 @@ function buildDefaultAdminStore(): AdminStoreData {
         title: snapshot.currentStage.title,
         stageDate: snapshot.currentStage.stageDate,
         status: snapshot.currentStage.status,
+        scheduledStartTime: snapshot.currentStage.scheduledStartTime ?? DEFAULT_STAGE_START_TIME,
+        isTest: snapshot.currentStage.isTest ?? false,
       },
       ...snapshot.upcomingStages.map((stage) => ({
         id: stage.id,
         title: stage.title,
         stageDate: stage.stageDate,
         status: stage.status,
+        scheduledStartTime: stage.scheduledStartTime ?? DEFAULT_STAGE_START_TIME,
+        isTest: stage.isTest ?? false,
       })),
     ],
   };
@@ -103,17 +114,20 @@ async function readStore() {
   const parsed = await readServerJsonDocument(adminStoreDocumentName, buildDefaultAdminStore);
   const normalizedPlayers = parsed.players.map(normalizeStoredPlayer);
   const didChangePlayers = JSON.stringify(normalizedPlayers) !== JSON.stringify(parsed.players);
+  const normalizedStages = normalizeStoredStages(parsed.stages);
+  const didChangeStages = JSON.stringify(normalizedStages) !== JSON.stringify(parsed.stages);
 
-  if (didChangePlayers) {
+  if (didChangePlayers || didChangeStages) {
     await writeServerJsonDocument(adminStoreDocumentName, {
       ...parsed,
       players: normalizedPlayers,
+      stages: normalizedStages,
     });
   }
 
   return {
     players: normalizedPlayers,
-    stages: parsed.stages,
+    stages: normalizedStages,
   };
 }
 
@@ -196,6 +210,8 @@ export async function saveStoredStage(input: StoredStageRecord) {
   const nextStage = {
     ...input,
     title: input.title.trim(),
+    scheduledStartTime: normalizeStageStartTime(input.scheduledStartTime),
+    isTest: Boolean(input.isTest),
   };
   const existingIndex = store.stages.findIndex((stage) => stage.id === input.id);
 
@@ -261,4 +277,30 @@ function buildIsoDateFromHistoryLabel(label: string) {
 
   const [, day, monthName, year] = match;
   return `${year}-${monthMap[monthName.toLowerCase()] ?? "01"}-${day}`;
+}
+
+function normalizeStoredStages(stages: StoredStageRecord[]) {
+  const normalized = stages.map((stage) => ({
+    ...stage,
+    scheduledStartTime: normalizeStageStartTime(stage.scheduledStartTime),
+    isTest: Boolean(stage.isTest),
+  }));
+
+  if (!normalized.some((stage) => stage.id === TEST_STAGE_ID)) {
+    normalized.push({
+      id: TEST_STAGE_ID,
+      title: TEST_STAGE_TITLE,
+      stageDate: TEST_STAGE_DATE,
+      status: "scheduled",
+      scheduledStartTime: TEST_STAGE_START_TIME,
+      isTest: true,
+    });
+  }
+
+  return normalized.sort((left, right) => left.stageDate.localeCompare(right.stageDate));
+}
+
+function normalizeStageStartTime(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed && /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : DEFAULT_STAGE_START_TIME;
 }

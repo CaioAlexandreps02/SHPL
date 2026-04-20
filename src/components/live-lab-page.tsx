@@ -3836,7 +3836,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                         Preview desligado
                       </p>
                       <p className="mt-2 text-sm text-[rgba(237,226,197,0.68)]">
-                        A tela tenta iniciar o preview automaticamente assim que a camera estiver disponivel.
+                        Se o preview nao abrir sozinho, use o botao de iniciar preview para tentar novamente.
                       </p>
                     </div>
                   </div>
@@ -3845,7 +3845,18 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
             </div>
 
             <div className="mt-4 flex flex-wrap gap-3">
-              <ActionButton label="Parar preview" onClick={stopStream} tone="muted" />
+              <ActionButton
+                disabled={captureStatus === "preview"}
+                label="Iniciar preview"
+                onClick={() => void startPreview()}
+                tone="accent"
+              />
+              <ActionButton
+                disabled={captureStatus === "idle"}
+                label="Parar preview"
+                onClick={stopStream}
+                tone="muted"
+              />
             </div>
 
             {integratedMode ? (
@@ -3917,7 +3928,18 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                       onClick={() => void stopLiveSession()}
                       tone="muted"
                     />
-                    <ActionButton label="Parar preview" onClick={stopStream} tone="muted" />
+                    <ActionButton
+                      disabled={captureStatus === "preview"}
+                      label="Iniciar preview"
+                      onClick={() => void startPreview()}
+                      tone="accent"
+                    />
+                    <ActionButton
+                      disabled={captureStatus === "idle"}
+                      label="Parar preview"
+                      onClick={stopStream}
+                      tone="muted"
+                    />
                     {integratedMode ? (
                       <ActionButton
                         label={
@@ -3966,8 +3988,8 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                       </p>
                       <p className="mt-2 text-sm text-[rgba(237,226,197,0.68)]">
                         {isRemoteMonitor
-                          ? "Este dispositivo esta aguardando a fonte de captura transmitir o preview remoto."
-                          : "A tela tenta iniciar o preview automaticamente assim que a camera estiver disponivel."}
+                          ? "Este dispositivo esta aguardando a fonte de captura transmitir o preview remoto. Se necessario, use iniciar preview no aparelho que transmite."
+                          : "Se o preview nao abrir sozinho, use o botao de iniciar preview para tentar novamente."}
                       </p>
                     </div>
                   </div>

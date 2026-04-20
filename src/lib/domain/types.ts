@@ -18,8 +18,10 @@ export type Stage = {
   title: string;
   stageDate: string;
   stageDateLabel: string;
+  scheduledStartTime?: string;
   blindStructureId: string;
   status: StageStatus;
+  isTest?: boolean;
   matchesPlayed: number;
   eligiblePlayers: number;
 };

@@ -5,11 +5,10 @@ import { getLeagueSnapshot } from "@/lib/data/repository";
 
 export default async function EstatisticasPage() {
   const access = await getCurrentUserAccess();
-
-  if (!isAdmin(access)) {
+  if (!access) {
     return (
       <SHPLPlaceholderPage
-        description="Ainda estamos desenvolvendo esta tela. Futuramente aqui vao aparecer novas informacoes, indicadores avancados e analises completas da SHPL."
+        description="Entre com sua conta para visualizar as estatisticas da SHPL."
         section="Estatisticas"
       />
     );
@@ -17,5 +16,5 @@ export default async function EstatisticasPage() {
 
   const snapshot = await getLeagueSnapshot();
 
-  return <SHPLStatisticsPage snapshot={snapshot} />;
+  return <SHPLStatisticsPage canViewSimulation={isAdmin(access)} snapshot={snapshot} />;
 }

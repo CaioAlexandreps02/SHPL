@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 
+import { SHPLNavIcon } from "@/components/shpl-nav-icon";
 import type { AccessRole } from "@/lib/auth/roles";
 import { calculateMatchPoints, compareStageRanking } from "@/lib/domain/rules";
 import type { BlindLevel, LeagueSnapshot, Stage } from "@/lib/domain/types";
@@ -71,17 +72,10 @@ export function StageSetupScreen({
   const [isClosingStage, setIsClosingStage] = useState(false);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [actionClockRemaining, setActionClockRemaining] = useState<number | null>(null);
-  const [showSeatSelector, setShowSeatSelector] = useState(false);
   const [seatAssignments, setSeatAssignments] = useState<Array<string | null>>(
     Array.from({ length: TOTAL_TABLE_SEATS }, () => null)
   );
-  const [draftSeatAssignments, setDraftSeatAssignments] = useState<Array<string | null>>(
-    Array.from({ length: TOTAL_TABLE_SEATS }, () => null)
-  );
   const [selectedSeatIndex, setSelectedSeatIndex] = useState(0);
-  const [pendingSeatAction, setPendingSeatAction] = useState<"start-current" | "start-next" | "manual" | null>(
-    null
-  );
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(
     snapshot.annualRanking[0]?.playerId ?? null
   );
@@ -635,29 +629,11 @@ export function StageSetupScreen({
     setIsRunning(true);
   }
 
-  function openSeatSelector(mode: "start-current" | "start-next" | "manual") {
-    const eligibleIds = new Set(eligibleStagePlayers.map((player) => player.playerId));
-    const nextAssignments = normalizeSeatAssignments(
-      seatAssignments.map((playerId) =>
-        playerId && eligibleIds.has(playerId) ? playerId : null
-      )
-    );
-
-    setDraftSeatAssignments(nextAssignments);
-    setSelectedSeatIndex(findFirstEditableSeat(nextAssignments));
-    setPendingSeatAction(mode);
-    setShowSeatSelector(true);
-    setStageNotice(null);
-  }
-
-  function handleOpenManualSeatSelector() {
-    openSeatSelector("manual");
-  }
-
-  function handleSeatAssignmentChange(seatIndex: number, playerId: string) {
-    setDraftSeatAssignments((currentAssignments) => {
-      const nextAssignments = [...currentAssignments];
-      const normalizedPlayerId = playerId || null;
+  function handleDirectSeatAssignmentChange(seatIndex: number, playerId: string) {
+    const normalizedPlayerId = playerId || null;
+    pushPlayerActionSnapshot();
+    setSeatAssignments((currentAssignments) => {
+      const nextAssignments = normalizeSeatAssignments([...currentAssignments]);
 
       for (let index = 0; index < nextAssignments.length; index += 1) {
         if (index !== seatIndex && nextAssignments[index] === normalizedPlayerId) {
@@ -668,51 +644,11 @@ export function StageSetupScreen({
       nextAssignments[seatIndex] = normalizedPlayerId;
       return nextAssignments;
     });
-  }
-
-  function handleConfirmSeatAssignments() {
-    const normalizedAssignments = normalizeSeatAssignments(draftSeatAssignments);
-    const assignedPlayerIds = normalizedAssignments.filter(
-      (playerId): playerId is string => Boolean(playerId)
+    setStageNotice(
+      currentMatchStartedAt && !currentMatchClosed
+        ? "Posicoes da mesa atualizadas e sincronizadas para a partida em andamento."
+        : "Posicoes da mesa atualizadas com sucesso."
     );
-    const duplicateCheck = new Set(assignedPlayerIds);
-
-    if (duplicateCheck.size !== assignedPlayerIds.length) {
-      setStageNotice("Cada jogador pode ocupar somente um lugar na mesa.");
-      return;
-    }
-
-    const missingPlayers = eligibleStagePlayers.filter(
-      (player) => !duplicateCheck.has(player.playerId)
-    );
-
-    if (missingPlayers.length > 0) {
-      setStageNotice("Defina um lugar para todos os jogadores aptos antes de continuar.");
-      return;
-    }
-
-    pushPlayerActionSnapshot();
-    setSeatAssignments(normalizedAssignments);
-    setShowSeatSelector(false);
-
-    if (pendingSeatAction === "start-next") {
-      performStartNextMatch();
-    } else if (pendingSeatAction === "start-current") {
-      performStartCurrentMatch();
-    } else {
-      setStageNotice(
-        currentMatchStartedAt && !currentMatchClosed
-          ? "Posicoes da mesa atualizadas e sincronizadas para a partida em andamento."
-          : "Posicoes da mesa atualizadas com sucesso."
-      );
-    }
-
-    setPendingSeatAction(null);
-  }
-
-  function handleCloseSeatSelector() {
-    setShowSeatSelector(false);
-    setPendingSeatAction(null);
   }
 
   function updateSelectedPlayer(updater: (player: StagePlayerControl) => StagePlayerControl) {
@@ -990,7 +926,7 @@ export function StageSetupScreen({
           buyInDaily: Number.parseInt(parsedSettings?.buyInDaily ?? "0", 10) || 0,
         }),
       });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as { error?: string; isTestStage?: boolean };
 
       if (!response.ok) {
         throw new Error(payload.error ?? "Nao foi possivel encerrar a etapa.");
@@ -999,9 +935,13 @@ export function StageSetupScreen({
       setStageClosedAt(nowIso);
       setShowCloseStageConfirm(false);
       setIsRunning(false);
-      setStageNotice("Etapa encerrada com confirmacao administrativa.");
+      setStageNotice(
+        payload.isTestStage
+          ? "Etapa de teste encerrada sem impactar ranking, historico oficial ou pote anual."
+          : "Etapa encerrada com confirmacao administrativa."
+      );
       window.localStorage.removeItem(`${STAGE_RUNTIME_STORAGE_KEY_PREFIX}-${stage.id}`);
-      router.push(`/shpl-2026/ranking?stage=${stage.id}`);
+      router.push(payload.isTestStage ? "/shpl-2026/etapas" : `/shpl-2026/ranking?stage=${stage.id}`);
       router.refresh();
     } catch (error) {
       setStageNotice(
@@ -1067,7 +1007,7 @@ export function StageSetupScreen({
                   }`}
                   href={item.href}
                 >
-                  {item.icon}
+                  <SHPLNavIcon fallback={item.icon} size="sm" src={item.iconSrc} />
                 </Link>
               ))}
               <button
@@ -1078,7 +1018,7 @@ export function StageSetupScreen({
                 }}
                 type="button"
               >
-                S
+                <SHPLNavIcon fallback="S" size="sm" src="/icons/shpl-menu/sair.svg" />
               </button>
             </div>
           </div>
@@ -1108,12 +1048,21 @@ export function StageSetupScreen({
                       : "Etapa em andamento"}
                 </span>
               </div>
+
+              {stage.isTest ? (
+                <div className="inline-flex items-center gap-3 rounded-[0.95rem] border border-[rgba(129,196,255,0.22)] bg-[rgba(129,196,255,0.08)] px-4 py-2.5 text-sm font-semibold text-[rgba(220,239,255,0.96)]">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(129,196,255,0.16)] text-xs font-black">
+                    T
+                  </span>
+                  <span>Etapa de teste</span>
+                </div>
+              ) : null}
             </div>
 
             <div className="grid gap-3 rounded-[1.45rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(255,255,255,0.03)] px-4 py-4 md:grid-cols-[minmax(0,1fr)_280px] md:items-center">
               <div className="grid gap-1">
                 <p className="text-lg font-semibold text-[rgba(255,236,184,0.96)]">
-                  Inicio programado: {formatStageStart(stage.stageDate)}
+                  Inicio programado: {formatStageStart(stage.stageDate, stage.scheduledStartTime)}
                 </p>
                 <p className="text-sm text-[rgba(236,225,196,0.68)]">
                   Inicio real: {actualStageStartedAt ? formatDateTime(actualStageStartedAt) : "--/--/---- --:--"}
@@ -1415,13 +1364,6 @@ export function StageSetupScreen({
               </div>
 
               <div className="flex flex-col gap-3 md:items-end">
-                <button
-                  className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.24)] bg-[linear-gradient(180deg,#ffd54e_0%,#c88807_100%)] px-5 text-sm font-black uppercase tracking-[0.14em] text-[#2a1a00] transition hover:brightness-110"
-                  onClick={handleOpenManualSeatSelector}
-                  type="button"
-                >
-                  Definir pessoas na mesa
-                </button>
                 <p className="text-xs text-[rgba(236,225,196,0.62)]">
                   {hasCompleteSeatAssignments
                     ? "Mesa completa para os jogadores aptos."
@@ -1430,13 +1372,69 @@ export function StageSetupScreen({
               </div>
             </div>
 
-              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-5 grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
               <TableSeatMap
+                highlightedSeatIndex={selectedSeatIndex}
+                onSeatClick={setSelectedSeatIndex}
                 seatAssignments={seatAssignments}
                 seatLabelsByPlayerId={Object.fromEntries(
                   eligibleStagePlayers.map((player) => [player.playerId, player.playerName])
                 )}
               />
+
+              <div className="rounded-[1.35rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] p-4 md:p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-[rgba(236,225,196,0.48)]">
+                  Lugar selecionado
+                </p>
+                <h3 className="mt-2 text-xl font-semibold text-[rgba(255,244,214,0.96)]">
+                  Lugar {selectedSeatIndex + 1}
+                </h3>
+
+                <label className="mt-4 grid gap-2">
+                  <span className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.52)]">
+                    Jogador
+                  </span>
+                  <select
+                    className="h-12 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none"
+                    onChange={(event) =>
+                      handleDirectSeatAssignmentChange(selectedSeatIndex, event.target.value)
+                    }
+                    value={seatAssignments[selectedSeatIndex] ?? ""}
+                  >
+                    <option value="">Deixar vazio</option>
+                    {buildSeatPlayerOptions(eligibleStagePlayers, seatAssignments, selectedSeatIndex).map(
+                      (player) => (
+                        <option key={player.playerId} value={player.playerId}>
+                          {player.playerName}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </label>
+
+                <div className="mt-5 rounded-[1rem] border border-[rgba(255,208,101,0.1)] bg-[rgba(7,24,18,0.56)] p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                    Jogadores aptos
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {eligibleStagePlayers.map((player) => {
+                      const assignedSeat = seatAssignments.findIndex(
+                        (playerId) => playerId === player.playerId
+                      );
+
+                      return (
+                        <span
+                          key={player.playerId}
+                          className="rounded-full border border-[rgba(129,211,120,0.22)] bg-[rgba(129,211,120,0.1)] px-3 py-1 text-xs font-semibold text-[rgba(222,255,221,0.96)]"
+                        >
+                          {player.playerName}
+                          {assignedSeat >= 0 ? ` - L${assignedSeat + 1}` : ""}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {missingSeatPlayers.length > 0 ? (
@@ -1540,115 +1538,6 @@ export function StageSetupScreen({
         </div>
       ) : null}
 
-      {showSeatSelector ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <button
-            aria-label="Fechar selecao de lugares"
-            className="absolute inset-0 bg-[rgba(2,10,7,0.72)] backdrop-blur-[3px]"
-            onClick={handleCloseSeatSelector}
-            type="button"
-          />
-
-          <div className="relative z-10 grid w-full max-w-6xl gap-5 rounded-[1.55rem] border border-[rgba(255,208,101,0.16)] bg-[linear-gradient(180deg,rgba(12,44,31,0.98),rgba(7,24,18,0.99))] p-5 shadow-[0_28px_60px_rgba(0,0,0,0.42)] xl:grid-cols-[1.2fr_0.8fr] md:p-6">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-[rgba(236,225,196,0.48)]">
-                Confirmacao da mesa
-              </p>
-              <h2 className="mt-3 text-2xl font-semibold text-[rgba(255,244,214,0.96)] md:text-3xl">
-                {pendingSeatAction === "start-next"
-                  ? "Confirmar lugares da proxima partida"
-                  : "Definir lugares da partida"}
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-[rgba(236,225,196,0.72)]">
-                Clique em um dos 8 lugares da mesa e selecione qual jogador verde vai ocupar esse assento.
-              </p>
-
-              <div className="relative mt-6 flex min-h-[430px] items-center justify-center overflow-hidden rounded-[1.7rem] border border-[rgba(255,208,101,0.14)] bg-[radial-gradient(circle_at_center,rgba(23,92,58,0.72),rgba(7,24,18,0.98)_72%)]">
-                <TableSeatMap
-                  highlightedSeatIndex={selectedSeatIndex}
-                  onSeatClick={setSelectedSeatIndex}
-                  seatAssignments={draftSeatAssignments}
-                  seatLabelsByPlayerId={Object.fromEntries(
-                    eligibleStagePlayers.map((player) => [player.playerId, player.playerName])
-                  )}
-                />
-              </div>
-            </div>
-
-            <div className="rounded-[1.35rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] p-4 md:p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-[rgba(236,225,196,0.48)]">
-                Lugar selecionado
-              </p>
-              <h3 className="mt-2 text-xl font-semibold text-[rgba(255,244,214,0.96)]">
-                Lugar {selectedSeatIndex + 1}
-              </h3>
-
-              <label className="mt-4 grid gap-2">
-                <span className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.52)]">
-                  Jogador
-                </span>
-                <select
-                  className="h-12 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none"
-                  onChange={(event) =>
-                    handleSeatAssignmentChange(selectedSeatIndex, event.target.value)
-                  }
-                  value={draftSeatAssignments[selectedSeatIndex] ?? ""}
-                >
-                  <option value="">Deixar vazio</option>
-                  {buildSeatPlayerOptions(eligibleStagePlayers, draftSeatAssignments, selectedSeatIndex).map(
-                    (player) => (
-                      <option key={player.playerId} value={player.playerId}>
-                        {player.playerName}
-                      </option>
-                    )
-                  )}
-                </select>
-              </label>
-
-              <div className="mt-5 rounded-[1rem] border border-[rgba(255,208,101,0.1)] bg-[rgba(7,24,18,0.56)] p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
-                  Jogadores aptos
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {eligibleStagePlayers.map((player) => {
-                    const assignedSeat = draftSeatAssignments.findIndex(
-                      (playerId) => playerId === player.playerId
-                    );
-
-                    return (
-                      <span
-                        key={player.playerId}
-                        className="rounded-full border border-[rgba(129,211,120,0.22)] bg-[rgba(129,211,120,0.1)] px-3 py-1 text-xs font-semibold text-[rgba(222,255,221,0.96)]"
-                      >
-                        {player.playerName}
-                        {assignedSeat >= 0 ? ` - L${assignedSeat + 1}` : ""}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-5 flex flex-col gap-3">
-                <button
-                  className="h-12 rounded-[0.95rem] border border-[rgba(255,208,101,0.24)] bg-[linear-gradient(180deg,#ffd54e_0%,#c88807_100%)] px-5 text-sm font-black uppercase tracking-[0.16em] text-[#2a1a00] transition hover:brightness-110"
-                  onClick={handleConfirmSeatAssignments}
-                  type="button"
-                >
-                  {pendingSeatAction === "start-next" ? "Continuar" : "Salvar e iniciar"}
-                </button>
-                <button
-                  className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-5 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
-                  onClick={handleCloseSeatSelector}
-                  type="button"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {showCloseStageConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
@@ -1741,11 +1630,6 @@ function normalizeSeatAssignments(assignments: Array<string | null>) {
   return Array.from({ length: TOTAL_TABLE_SEATS }, (_, index) => assignments[index] ?? null);
 }
 
-function findFirstEditableSeat(assignments: Array<string | null>) {
-  const emptySeatIndex = assignments.findIndex((playerId) => playerId === null);
-  return emptySeatIndex >= 0 ? emptySeatIndex : 0;
-}
-
 function buildSeatPlayerOptions(
   players: StagePlayerControl[],
   draftAssignments: Array<string | null>,
@@ -1765,13 +1649,13 @@ function buildSeatPlayerOptions(
 function getSeatPosition(seatIndex: number) {
   const positions = [
     { top: "8%", left: "50%", transform: "translate(-50%, 0)" },
-    { top: "21%", right: "8%" },
-    { top: "50%", right: "2%", transform: "translate(0, -50%)" },
-    { bottom: "14%", right: "10%" },
-    { bottom: "6%", left: "50%", transform: "translate(-50%, 0)" },
-    { bottom: "14%", left: "10%" },
-    { top: "50%", left: "2%", transform: "translate(0, -50%)" },
-    { top: "21%", left: "8%" },
+    { top: "18%", right: "14%" },
+    { top: "50%", right: "4%", transform: "translate(0, -50%)" },
+    { bottom: "18%", right: "14%" },
+    { bottom: "8%", left: "50%", transform: "translate(-50%, 0)" },
+    { bottom: "18%", left: "14%" },
+    { top: "50%", left: "4%", transform: "translate(0, -50%)" },
+    { top: "18%", left: "14%" },
   ] as const;
 
   return positions[seatIndex] ?? positions[0];
@@ -1789,9 +1673,9 @@ function TableSeatMap({
   seatLabelsByPlayerId: Record<string, string>;
 }) {
   return (
-    <div className="relative mt-6 flex min-h-[430px] items-center justify-center overflow-hidden rounded-[1.7rem] border border-[rgba(255,208,101,0.14)] bg-[radial-gradient(circle_at_center,rgba(23,92,58,0.72),rgba(7,24,18,0.98)_72%)]">
-      <div className="absolute h-[62%] w-[72%] rounded-full border-[3px] border-[rgba(255,208,101,0.22)] bg-[radial-gradient(circle_at_center,rgba(20,92,57,0.8),rgba(8,34,24,0.96)_70%)] shadow-[inset_0_0_0_1px_rgba(255,208,101,0.06)]" />
-      <div className="absolute h-[46%] w-[52%] rounded-full border border-[rgba(255,208,101,0.12)] bg-[rgba(5,15,11,0.34)]" />
+    <div className="relative mt-6 flex min-h-[360px] items-center justify-center overflow-hidden rounded-[1.7rem] border border-[rgba(255,208,101,0.14)] bg-[radial-gradient(circle_at_center,rgba(23,92,58,0.72),rgba(7,24,18,0.98)_72%)]">
+      <div className="absolute h-[52%] w-[84%] rounded-full border-[3px] border-[rgba(255,208,101,0.22)] bg-[radial-gradient(circle_at_center,rgba(20,92,57,0.8),rgba(8,34,24,0.96)_70%)] shadow-[inset_0_0_0_1px_rgba(255,208,101,0.06)]" />
+      <div className="absolute h-[34%] w-[62%] rounded-full border border-[rgba(255,208,101,0.12)] bg-[rgba(5,15,11,0.34)]" />
 
       {normalizeSeatAssignments(seatAssignments).map((playerId, seatIndex) => {
         const seatPosition = getSeatPosition(seatIndex);
@@ -1802,7 +1686,7 @@ function TableSeatMap({
         return (
           <Component
             key={`seat-map-${seatIndex + 1}`}
-            className={`absolute flex h-[84px] w-[124px] flex-col items-center justify-center rounded-[1.1rem] border px-3 py-3 text-center shadow-[0_14px_28px_rgba(0,0,0,0.22)] transition ${
+            className={`absolute flex h-[76px] w-[150px] flex-col items-center justify-center rounded-[1.1rem] border px-3 py-3 text-center shadow-[0_14px_28px_rgba(0,0,0,0.22)] transition ${
               isSelected
                 ? "border-[rgba(255,208,101,0.42)] bg-[rgba(255,183,32,0.14)]"
                 : "border-[rgba(255,208,101,0.16)] bg-[rgba(7,24,18,0.9)]"
@@ -1843,9 +1727,9 @@ function formatLongClock(totalSeconds: number) {
   return `${hours}:${minutes}:${seconds}`;
 }
 
-function formatStageStart(stageDate: string) {
+function formatStageStart(stageDate: string, scheduledStartTime?: string) {
   const [year, month, day] = stageDate.split("-");
-  return `${day}/${month}/${year} 20:00`;
+  return `${day}/${month}/${year} ${scheduledStartTime ?? "20:00"}`;
 }
 
 function formatDateTime(value: string) {

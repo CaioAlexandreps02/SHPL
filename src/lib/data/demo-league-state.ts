@@ -198,6 +198,23 @@ export async function finalizeStage(input: FinalizeStageInput) {
     throw new Error("Essa etapa ja foi encerrada anteriormente.");
   }
 
+  if (stage.isTest) {
+    await saveStoredStage({
+      id: stage.id,
+      title: stage.title,
+      stageDate: stage.stageDate,
+      status: "finished",
+      scheduledStartTime: stage.scheduledStartTime,
+      isTest: true,
+    });
+
+    return {
+      historySummary: null,
+      historyDetail: null,
+      isTestStage: true,
+    };
+  }
+
   const players = storedPlayers.map((player) => ({
     id: player.id,
     name: player.nickname || player.fullName,
@@ -330,11 +347,14 @@ export async function finalizeStage(input: FinalizeStageInput) {
     title: stage.title,
     stageDate: stage.stageDate,
     status: "finished",
+    scheduledStartTime: stage.scheduledStartTime,
+    isTest: stage.isTest ?? false,
   });
 
   return {
     historySummary,
     historyDetail,
+    isTestStage: false,
   };
 }
 
@@ -422,7 +442,14 @@ function withAllPlayersMatchPoints(stage: StageMatchPoints, playerIds: string[])
 }
 
 function toSnapshotStage(
-  stage: { id: string; title: string; stageDate: string; status: Stage["status"] },
+  stage: {
+    id: string;
+    title: string;
+    stageDate: string;
+    status: Stage["status"];
+    scheduledStartTime?: string;
+    isTest?: boolean;
+  },
   meta: { eligiblePlayers: number; matchesPlayed: number }
 ): Stage {
   return {
@@ -431,8 +458,10 @@ function toSnapshotStage(
     title: stage.title,
     stageDate: stage.stageDate,
     stageDateLabel: formatStageDateLabel(stage.stageDate),
+    scheduledStartTime: stage.scheduledStartTime ?? "20:00",
     blindStructureId: "blind-default",
     status: stage.status,
+    isTest: stage.isTest ?? false,
     matchesPlayed: meta.matchesPlayed,
     eligiblePlayers: meta.eligiblePlayers,
   };

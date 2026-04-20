@@ -11,7 +11,9 @@ type StageListEntry = {
   stageDate: string;
   stageDateLabel: string;
   stageDateShortLabel: string;
+  scheduledStartTime?: string;
   status: StageStatus;
+  isTest?: boolean;
   kind: "finished" | "current" | "upcoming";
 };
 
@@ -19,14 +21,18 @@ type StageDraft = {
   id: string | null;
   title: string;
   stageDate: string;
+  scheduledStartTime: string;
   status: StageStatus;
+  isTest: boolean;
 };
 
 type StoredStagePayload = {
   id: string;
   title: string;
   stageDate: string;
+  scheduledStartTime?: string;
   status: StageStatus;
+  isTest?: boolean;
 };
 
 export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
@@ -73,7 +79,9 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
       id: null,
       title: `Etapa ${String(stages.length + 1).padStart(2, "0")}`,
       stageDate: "",
+      scheduledStartTime: "20:00",
       status: "scheduled",
+      isTest: false,
     });
   }
 
@@ -82,7 +90,9 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
       id: stage.id,
       title: stage.title,
       stageDate: stage.stageDate,
+      scheduledStartTime: stage.scheduledStartTime ?? "20:00",
       status: stage.status,
+      isTest: Boolean(stage.isTest),
     });
   }
 
@@ -99,7 +109,9 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
       id: draft.id ?? `stage-${Date.now()}`,
       title: draft.title.trim(),
       stageDate: draft.stageDate,
+      scheduledStartTime: draft.scheduledStartTime,
       status: draft.status,
+      isTest: draft.isTest,
     };
     const response = await fetch("/api/shpl-admin/stages", {
       method: "POST",
@@ -211,15 +223,20 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
                   {stage.title}
                 </p>
                 <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
-                  {stage.stageDateLabel}
+                  {stage.stageDateLabel} {stage.scheduledStartTime ? `- ${stage.scheduledStartTime}` : ""}
                 </p>
               </div>
             </div>
 
-            <div>
+            <div className="flex flex-wrap gap-2">
               <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getStageStatusClassName(stage.status)}`}>
                 {getStageStatusLabel(stage.status)}
               </span>
+              {stage.isTest ? (
+                <span className="inline-flex rounded-full border border-[rgba(129,196,255,0.18)] bg-[rgba(129,196,255,0.1)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[rgba(212,230,255,0.96)]">
+                  Teste
+                </span>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-2 md:items-end">
@@ -303,6 +320,21 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
                 />
               </Field>
 
+              <Field label="Horario programado">
+                <input
+                  className={inputClassName}
+                  onChange={(event) =>
+                    setDraft((currentDraft) =>
+                      currentDraft
+                        ? { ...currentDraft, scheduledStartTime: event.target.value }
+                        : null
+                    )
+                  }
+                  type="time"
+                  value={draft.scheduledStartTime}
+                />
+              </Field>
+
               <Field label="Status">
                 <select
                   className={inputClassName}
@@ -318,6 +350,23 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
                   <option value="scheduled">Agendada</option>
                   <option value="active">Em andamento</option>
                   <option value="finished">Finalizada</option>
+                </select>
+              </Field>
+
+              <Field label="Modo">
+                <select
+                  className={inputClassName}
+                  onChange={(event) =>
+                    setDraft((currentDraft) =>
+                      currentDraft
+                        ? { ...currentDraft, isTest: event.target.value === "test" }
+                        : null
+                    )
+                  }
+                  value={draft.isTest ? "test" : "official"}
+                >
+                  <option value="official">Oficial</option>
+                  <option value="test">Teste</option>
                 </select>
               </Field>
             </div>
@@ -357,7 +406,9 @@ function buildStageEntries(snapshot: LeagueSnapshot) {
     stageDate: buildIsoDateFromHistoryLabel(stage.stageDateLabel),
     stageDateLabel: stage.stageDateLabel,
     stageDateShortLabel: buildShortLabelFromHistoryLabel(stage.stageDateLabel),
+    scheduledStartTime: "20:00",
     status: "finished",
+    isTest: false,
     kind: "finished",
   }));
 
@@ -367,7 +418,9 @@ function buildStageEntries(snapshot: LeagueSnapshot) {
     stageDate: snapshot.currentStage.stageDate,
     stageDateLabel: snapshot.currentStage.stageDateLabel,
     stageDateShortLabel: formatStageShortLabel(snapshot.currentStage.stageDate),
+    scheduledStartTime: snapshot.currentStage.scheduledStartTime,
     status: snapshot.currentStage.status,
+    isTest: snapshot.currentStage.isTest ?? false,
     kind: snapshot.currentStage.status === "active" ? "current" : "upcoming",
   };
 
@@ -377,7 +430,9 @@ function buildStageEntries(snapshot: LeagueSnapshot) {
     stageDate: stage.stageDate,
     stageDateLabel: stage.stageDateLabel,
     stageDateShortLabel: formatStageShortLabel(stage.stageDate),
+    scheduledStartTime: stage.scheduledStartTime,
     status: stage.status,
+    isTest: stage.isTest ?? false,
     kind: "upcoming",
   }));
 
@@ -395,7 +450,9 @@ function mapStoredStageToEntry(stage: StoredStagePayload): StageListEntry {
     stageDate: stage.stageDate,
     stageDateLabel: formatStageDateLabel(stage.stageDate),
     stageDateShortLabel: formatStageShortLabel(stage.stageDate),
+    scheduledStartTime: stage.scheduledStartTime ?? "20:00",
     status: stage.status,
+    isTest: stage.isTest ?? false,
     kind:
       stage.status === "finished"
         ? "finished"

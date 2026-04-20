@@ -1,7 +1,7 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 
+import { StatisticsSimulationPanel } from "@/components/statistics-simulation-panel";
 import { listSavedTranscripts } from "@/lib/live-lab/browser-transcript-store";
 import {
   parseTranscriptSessions,
@@ -43,7 +43,13 @@ type PlayerRevealSummary = {
   }>;
 };
 
-export function SHPLStatisticsPage({ snapshot }: { snapshot: LeagueSnapshot }) {
+export function SHPLStatisticsPage({
+  canViewSimulation,
+  snapshot,
+}: {
+  canViewSimulation: boolean;
+  snapshot: LeagueSnapshot;
+}) {
   const basePlayerOptions = useMemo(() => {
     const players = new Map<string, KnownPlayer>();
 
@@ -199,6 +205,10 @@ export function SHPLStatisticsPage({ snapshot }: { snapshot: LeagueSnapshot }) {
             <InfoCard label="Maos registradas" value={String(totalHandsAnalyzed)} />
             <InfoCard label="Jogadores com historico" value={String(totalTrackedPlayers)} />
           </div>
+
+          {canViewSimulation ? (
+            <StatisticsSimulationPanel playerOptions={basePlayerOptions} sessions={sessions} />
+          ) : null}
 
           <article className="rounded-[1.35rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-[rgba(236,225,196,0.48)]">

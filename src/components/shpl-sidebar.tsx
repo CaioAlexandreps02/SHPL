@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
+import { SHPLNavIcon } from "@/components/shpl-nav-icon";
 import type { AccessRole } from "@/lib/auth/roles";
 import { getVisibleShplNavItems, isShplNavItemActive } from "@/lib/navigation/shpl-nav";
 
@@ -41,9 +42,7 @@ export function SHPLSidebar({ roles }: { roles: AccessRole[] }) {
             }`}
             href={item.href}
           >
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(255,191,39,0.14)] text-[rgba(255,220,143,0.98)]">
-              {item.icon}
-            </span>
+            <SHPLNavIcon fallback={item.icon} src={item.iconSrc} />
             <span>{item.label}</span>
           </Link>
         ))}
@@ -54,9 +53,7 @@ export function SHPLSidebar({ roles }: { roles: AccessRole[] }) {
         onClick={handleBackToMenu}
         type="button"
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(255,191,39,0.14)] text-[rgba(255,220,143,0.98)]">
-          S
-        </span>
+        <SHPLNavIcon fallback="S" src="/icons/shpl-menu/sair.svg" />
         <span>Sair</span>
       </button>
     </aside>
