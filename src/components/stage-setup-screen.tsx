@@ -220,7 +220,7 @@ export function StageSetupScreen({
   const appendStageLogEntries = useCallback(
     async (entries: string[], ensureOnly = false) => {
       try {
-        await fetch("/api/shpl-admin/stage-log", {
+        await fetch("/api/shpl-admin/stage-session", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -311,19 +311,24 @@ export function StageSetupScreen({
 
     async function hydrateStageRuntime() {
       try {
-        const response = await fetch(`/api/shpl-admin/stage-runtime?stageId=${stage.id}`, {
+        const response = await fetch(`/api/shpl-admin/stage-session?stageId=${stage.id}`, {
           cache: "no-store",
         });
 
         if (response.ok) {
-          const payload = (await response.json()) as { runtime?: StoredStageRuntimePayload | null };
-          if (payload.runtime && !cancelled) {
-            const signature = serializeRuntimePayload(payload.runtime);
-            applyStageRuntimePayload(payload.runtime);
+          const payload = (await response.json()) as {
+            session?: {
+              runtime?: StoredStageRuntimePayload | null;
+            } | null;
+          };
+          const runtime = payload.session?.runtime ?? null;
+          if (runtime && !cancelled) {
+            const signature = serializeRuntimePayload(runtime);
+            applyStageRuntimePayload(runtime);
             lastRuntimeSignatureRef.current = signature;
             window.localStorage.setItem(
               buildStageRuntimeStorageKey(stage.id),
-              JSON.stringify(payload.runtime),
+              JSON.stringify(runtime),
             );
             runtimeHydratedRef.current = true;
             return;
@@ -391,14 +396,24 @@ export function StageSetupScreen({
       const payloadWithTimestamp = buildStageRuntimePayload(new Date().toISOString());
 
       try {
-        const response = await fetch("/api/shpl-admin/stage-runtime", {
+        const response = await fetch("/api/shpl-admin/stage-session", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            stageId: stage.id,
+            stage: {
+              id: stage.id,
+              title: stage.title,
+              stageDate: stage.stageDate,
+              scheduledStartTime: stage.scheduledStartTime,
+            },
             runtime: payloadWithTimestamp,
+            session: {
+              modules: {
+                tableActive: true,
+              },
+            },
           }),
         });
 
@@ -439,6 +454,9 @@ export function StageSetupScreen({
     showActionClock,
     stageClosedAt,
     stage.id,
+    stage.scheduledStartTime,
+    stage.stageDate,
+    stage.title,
     buildStageRuntimePayload,
   ]);
 
@@ -451,7 +469,7 @@ export function StageSetupScreen({
 
     async function pollRemoteStageRuntime() {
       try {
-        const response = await fetch(`/api/shpl-admin/stage-runtime?stageId=${stage.id}`, {
+        const response = await fetch(`/api/shpl-admin/stage-session?stageId=${stage.id}`, {
           cache: "no-store",
         });
 
@@ -459,23 +477,28 @@ export function StageSetupScreen({
           return;
         }
 
-        const payload = (await response.json()) as { runtime?: StoredStageRuntimePayload | null };
+        const payload = (await response.json()) as {
+          session?: {
+            runtime?: StoredStageRuntimePayload | null;
+          } | null;
+        };
+        const runtime = payload.session?.runtime ?? null;
 
-        if (!payload.runtime || cancelled) {
+        if (!runtime || cancelled) {
           return;
         }
 
-        const nextSignature = serializeRuntimePayload(payload.runtime);
+        const nextSignature = serializeRuntimePayload(runtime);
 
         if (nextSignature === lastRuntimeSignatureRef.current) {
           return;
         }
 
-        applyStageRuntimePayload(payload.runtime);
+        applyStageRuntimePayload(runtime);
         lastRuntimeSignatureRef.current = nextSignature;
         window.localStorage.setItem(
           buildStageRuntimeStorageKey(stage.id),
-          JSON.stringify(payload.runtime),
+          JSON.stringify(runtime),
         );
       } catch {
         // Mantem o fluxo local caso a consulta remota falhe.

@@ -37,6 +37,12 @@ import {
   type LiveLinkedStageContext,
   type LiveLinkedStageOption,
 } from "@/lib/live-lab/stage-runtime-link";
+import {
+  type LiveSessionHubMode,
+  resolveLiveSessionLifecycleState,
+  type LiveSessionRole,
+} from "@/lib/live-lab/session";
+import type { StoredStageTransmissionPayload } from "@/lib/live-lab/stage-session-shared";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 type MediaDeviceOption = {
@@ -55,7 +61,7 @@ type CaptureStatus = "idle" | "preview";
 type LiveLabView = "capture" | "admin" | "videos";
 type LiveSessionStatus = "idle" | "running" | "paused";
 type LiveLabMode = "lab" | "integrated";
-type IntegratedDeviceRole = "camera" | "monitor";
+type IntegratedDeviceRole = "camera" | "monitor" | "complete";
 type CommandKind = "start" | "end" | "save" | "none";
 type TranscriptEntry = {
   id: string;
@@ -215,9 +221,16 @@ const LIVE_REMOTE_ICE_CONFIGURATION: RTCConfiguration = {
 type LiveLabPageProps = {
   mode?: LiveLabMode;
   linkedStageOption?: LiveLinkedStageOption | null;
+  integratedEntryMode?: Exclude<LiveSessionHubMode, "hub">;
+  onRequestModeChange?: (mode: LiveSessionHubMode) => void;
 };
 
-export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabPageProps) {
+export function LiveLabPage({
+  mode = "lab",
+  linkedStageOption = null,
+  integratedEntryMode,
+  onRequestModeChange,
+}: LiveLabPageProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const adminVideoRef = useRef<HTMLVideoElement | null>(null);
   const supabaseClientRef = useRef<SupabaseClient | null>(null);
@@ -320,28 +333,71 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   const [hasSavedBoardRegion, setHasSavedBoardRegion] = useState(false);
   const [previewSessionId, setPreviewSessionId] = useState(0);
   const [linkedStageContext, setLinkedStageContext] = useState<LiveLinkedStageContext | null>(null);
+  const [hasFinishedSession, setHasFinishedSession] = useState(false);
 
   const integratedMode = mode === "integrated";
   const boardFeaturesEnabled = !integratedMode;
   const isRemoteMonitor = integratedMode && deviceRole === "monitor";
+  const canPublishCapture = !integratedMode || deviceRole !== "monitor";
+  const isIntegratedTransmitView = integratedMode && integratedEntryMode === "transmit";
+  const isIntegratedFullView = integratedMode && integratedEntryMode === "full";
+  const integratedSessionRole = useMemo<LiveSessionRole>(() => {
+    if (deviceRole === "monitor") {
+      return "monitor";
+    }
+
+    return deviceRole === "complete" ? "complete" : "transmitter";
+  }, [deviceRole]);
   const remoteChannelName = linkedStageOption
     ? `${LIVE_REMOTE_CHANNEL_PREFIX}:${linkedStageOption.stageId}`
     : null;
-
-  function handleSelectCaptureMode() {
-    setDeviceRole("camera");
-    setActiveView("capture");
-  }
 
   function handleSelectMonitorMode() {
     setDeviceRole("monitor");
     setActiveView("admin");
   }
 
-  function handleEnableLocalCaptureFromAdmin() {
-    setDeviceRole("camera");
+  function handleSelectFullMode() {
+    setDeviceRole("complete");
     setActiveView("admin");
   }
+
+  function handleSelectVideosMode() {
+    setActiveView("videos");
+    onRequestModeChange?.("videos");
+  }
+
+  function handleEnableLocalCaptureFromAdmin() {
+    setDeviceRole("complete");
+    setActiveView("admin");
+    onRequestModeChange?.("full");
+  }
+
+  useEffect(() => {
+    if (!integratedMode || !integratedEntryMode) {
+      return;
+    }
+
+    if (integratedEntryMode === "transmit") {
+      setDeviceRole("camera");
+      setActiveView("capture");
+      return;
+    }
+
+    if (integratedEntryMode === "monitor") {
+      setDeviceRole("monitor");
+      setActiveView("admin");
+      return;
+    }
+
+    if (integratedEntryMode === "full") {
+      setDeviceRole("complete");
+      setActiveView("admin");
+      return;
+    }
+
+    setActiveView("videos");
+  }, [integratedEntryMode, integratedMode]);
 
   function attachPreviewStream(stream: MediaStream | null) {
     for (const element of [videoRef.current, adminVideoRef.current]) {
@@ -359,23 +415,23 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     }
   }
 
-  function getPreviewSourceVideoElement() {
+  const getPreviewSourceVideoElement = useCallback(() => {
     return (
       [videoRef.current, adminVideoRef.current].find(
         (element) => element && element.videoWidth > 0 && element.videoHeight > 0,
       ) ?? null
     );
-  }
+  }, []);
 
-  function getPreviewFrameCanvas() {
+  const getPreviewFrameCanvas = useCallback(() => {
     if (!previewFrameCanvasRef.current && typeof document !== "undefined") {
       previewFrameCanvasRef.current = document.createElement("canvas");
     }
 
     return previewFrameCanvasRef.current;
-  }
+  }, []);
 
-  function capturePreviewFrameDataUrl() {
+  const capturePreviewFrameDataUrl = useCallback(() => {
     const sourceVideo = getPreviewSourceVideoElement();
     const canvas = getPreviewFrameCanvas();
 
@@ -399,7 +455,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(sourceVideo, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/jpeg", 0.62);
-  }
+  }, [getPreviewFrameCanvas, getPreviewSourceVideoElement]);
 
   async function syncPreviewElementsWithStream(stream: MediaStream | null) {
     const syncElement = async (element: HTMLVideoElement | null) => {
@@ -516,22 +572,25 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     return result === "ok";
   }
 
-  async function broadcastIntegratedState(overrides?: Partial<Extract<LiveRemoteMessage, { type: "state" }>>) {
-    if (!integratedMode || deviceRole !== "camera") {
-      return;
-    }
+  const broadcastIntegratedState = useCallback(
+    async (overrides?: Partial<Extract<LiveRemoteMessage, { type: "state" }>>) => {
+      if (!integratedMode || !canPublishCapture) {
+        return;
+      }
 
-    const deviceId = getOrCreateIntegratedDeviceId();
+      const deviceId = getOrCreateIntegratedDeviceId();
 
-    await sendLiveRemoteMessage({
-      type: "state",
-      deviceId,
-      role: "camera",
-      captureStatus: overrides?.captureStatus ?? captureStatus,
-      liveSessionStatus: overrides?.liveSessionStatus ?? liveSessionStatus,
-      error: overrides?.error ?? error,
-    });
-  }
+      await sendLiveRemoteMessage({
+        type: "state",
+        deviceId,
+        role: deviceRole,
+        captureStatus: overrides?.captureStatus ?? captureStatus,
+        liveSessionStatus: overrides?.liveSessionStatus ?? liveSessionStatus,
+        error: overrides?.error ?? error,
+      });
+    },
+    [canPublishCapture, captureStatus, deviceRole, error, integratedMode, liveSessionStatus],
+  );
 
   function buildRemoteStatusLabel(
     nextCaptureStatus: CaptureStatus,
@@ -605,31 +664,34 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     previewFrameLoopIdRef.current += 1;
   }
 
-  async function runRemotePreviewFrameLoop(loopId: number) {
-    while (
-      previewFrameLoopIdRef.current === loopId &&
-      integratedMode &&
-      deviceRole === "camera" &&
-      captureStatus === "preview"
-    ) {
-      try {
-        const dataUrl = capturePreviewFrameDataUrl();
+  const runRemotePreviewFrameLoop = useCallback(
+    async (loopId: number) => {
+      while (
+        previewFrameLoopIdRef.current === loopId &&
+        integratedMode &&
+        canPublishCapture &&
+        captureStatus === "preview"
+      ) {
+        try {
+          const dataUrl = capturePreviewFrameDataUrl();
 
-        if (dataUrl) {
-          await sendLiveRemoteMessage({
-            type: "preview-frame",
-            fromId: getOrCreateIntegratedDeviceId(),
-            dataUrl,
-            capturedAt: new Date().toISOString(),
-          });
+          if (dataUrl) {
+            await sendLiveRemoteMessage({
+              type: "preview-frame",
+              fromId: getOrCreateIntegratedDeviceId(),
+              dataUrl,
+              capturedAt: new Date().toISOString(),
+            });
+          }
+        } catch {
+          // O envio do frame serve apenas como fallback para o preview remoto.
         }
-      } catch {
-        // O envio do frame serve apenas como fallback para o preview remoto.
-      }
 
-      await wait(LIVE_REMOTE_PREVIEW_FRAME_INTERVAL_MS);
-    }
-  }
+        await wait(LIVE_REMOTE_PREVIEW_FRAME_INTERVAL_MS);
+      }
+    },
+    [canPublishCapture, capturePreviewFrameDataUrl, captureStatus, integratedMode],
+  );
 
   async function announceViewerReady() {
     if (!integratedMode || deviceRole !== "monitor") {
@@ -769,7 +831,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   }
 
   async function handleRemoteAnswerMessage(message: Extract<LiveRemoteMessage, { type: "answer" }>) {
-    if (deviceRole !== "camera" || message.toId !== getOrCreateIntegratedDeviceId()) {
+    if (!canPublishCapture || message.toId !== getOrCreateIntegratedDeviceId()) {
       return;
     }
 
@@ -817,7 +879,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       }
 
       try {
-        await fetch("/api/shpl-admin/stage-log", {
+        await fetch("/api/shpl-admin/stage-session", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -835,6 +897,83 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       }
     },
     [linkedStageContext, linkedStageOption],
+  );
+  const syncLinkedStageSession = useCallback(
+    async (overrides?: {
+      transmission?: Partial<StoredStageTransmissionPayload>;
+      state?: ReturnType<typeof resolveLiveSessionLifecycleState>;
+      transmissionActive?: boolean;
+    }) => {
+      const stageId = linkedStageContext?.stageId ?? linkedStageOption?.stageId;
+      const stageTitle = linkedStageContext?.stageTitle ?? linkedStageOption?.stageTitle;
+
+      if (!stageId || !stageTitle) {
+        return;
+      }
+
+      const transmissionPayload: StoredStageTransmissionPayload = {
+        deviceId: getOrCreateIntegratedDeviceId(),
+        deviceName:
+          overrides?.transmission?.deviceName ??
+          (integratedSessionRole === "monitor"
+            ? "Monitor da transmissao"
+            : integratedSessionRole === "complete"
+              ? "Operacao completa"
+              : "Fonte de captura"),
+        role: overrides?.transmission?.role ?? integratedSessionRole,
+        captureStatus: overrides?.transmission?.captureStatus ?? captureStatus,
+        liveSessionStatus:
+          overrides?.transmission?.liveSessionStatus ?? liveSessionStatus,
+        connectionStatus:
+          overrides?.transmission?.connectionStatus ?? remoteBridgeStatus ?? null,
+        eventCount: overrides?.transmission?.eventCount ?? transcriptFeed.length,
+        lastCommand:
+          overrides?.transmission?.lastCommand ?? transcriptFeed[0]?.text ?? null,
+        updatedAt: new Date().toISOString(),
+      };
+
+      try {
+        await fetch("/api/shpl-admin/stage-session", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            stage: {
+              id: stageId,
+              title: stageTitle,
+            },
+            transmission: transmissionPayload,
+            session: {
+              state:
+                overrides?.state ??
+                resolveLiveSessionLifecycleState({
+                  captureStatus,
+                  sessionStatus: liveSessionStatus,
+                  hasFinishedSession,
+                }),
+              modules: {
+                transmissionActive:
+                  overrides?.transmissionActive ??
+                  (captureStatus === "preview" || liveSessionStatus !== "idle"),
+              },
+            },
+          }),
+        });
+      } catch {
+        // Mantem a transmissao operando mesmo se a sessao compartilhada falhar temporariamente.
+      }
+    },
+    [
+      captureStatus,
+      hasFinishedSession,
+      integratedSessionRole,
+      linkedStageContext,
+      linkedStageOption,
+      liveSessionStatus,
+      remoteBridgeStatus,
+      transcriptFeed,
+    ],
   );
 
   const loadDevices = useCallback(async () => {
@@ -904,9 +1043,13 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         INTEGRATED_DEVICE_ROLE_STORAGE_KEY,
       ) as IntegratedDeviceRole | null;
 
-      if (storedDeviceRole === "camera" || storedDeviceRole === "monitor") {
+      if (
+        storedDeviceRole === "camera" ||
+        storedDeviceRole === "monitor" ||
+        storedDeviceRole === "complete"
+      ) {
         setDeviceRole(storedDeviceRole);
-        setActiveView(storedDeviceRole === "camera" ? "capture" : "admin");
+        setActiveView(storedDeviceRole === "monitor" ? "admin" : "capture");
       } else {
         setActiveView("admin");
       }
@@ -975,7 +1118,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     }
 
     window.localStorage.setItem(INTEGRATED_DEVICE_ROLE_STORAGE_KEY, deviceRole);
-  }, [deviceRole, integratedMode]);
+  }, [canPublishCapture, deviceRole, integratedMode]);
 
   useEffect(() => {
     if (!integratedMode || deviceRole !== "monitor") {
@@ -991,21 +1134,21 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     setLiveSessionStatus("idle");
     liveSessionStatusRef.current = "idle";
     attachPreviewStream(remotePreviewStreamRef.current);
-  }, [deviceRole, integratedMode]);
+  }, [canPublishCapture, deviceRole, integratedMode]);
 
   useEffect(() => {
     if (!integratedMode) {
       return;
     }
 
-    if (deviceRole === "camera") {
+    if (canPublishCapture) {
       setRemoteBridgeStatus("Este dispositivo ficou como fonte de captura da transmissao.");
       attachPreviewStream(streamRef.current);
       return;
     }
 
     setRemoteBridgeStatus("Este dispositivo ficou como monitor de controle da transmissao.");
-  }, [deviceRole, integratedMode]);
+  }, [canPublishCapture, deviceRole, integratedMode]);
 
   useEffect(() => {
     if (!integratedMode || !remoteChannelName) {
@@ -1033,7 +1176,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         }
 
         if (payload.type === "viewer-ready") {
-          if (deviceRole !== "camera" || payload.viewerId === deviceId || !streamRef.current) {
+          if (!canPublishCapture || payload.viewerId === deviceId || !streamRef.current) {
             return;
           }
 
@@ -1043,7 +1186,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         }
 
         if (payload.type === "state") {
-          if (payload.deviceId === deviceId || payload.role !== "camera" || deviceRole !== "monitor") {
+          if (payload.deviceId === deviceId || payload.role === "monitor" || deviceRole !== "monitor") {
             return;
           }
 
@@ -1081,7 +1224,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         }
 
         if (payload.type === "command") {
-          if (deviceRole !== "camera" || payload.fromId === deviceId) {
+          if (!canPublishCapture || payload.fromId === deviceId) {
             return;
           }
 
@@ -1130,7 +1273,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
-        if (deviceRole === "camera") {
+        if (canPublishCapture) {
           setRemoteBridgeStatus("Este dispositivo esta pronto para transmitir o preview.");
           void broadcastIntegratedState();
           return;
@@ -1160,15 +1303,15 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   }, [deviceRole, integratedMode, remoteChannelName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!integratedMode || deviceRole !== "camera" || !liveRemoteChannelRef.current) {
+    if (!integratedMode || !canPublishCapture || !liveRemoteChannelRef.current) {
       return;
     }
 
     void broadcastIntegratedState();
-  }, [captureStatus, deviceRole, error, integratedMode, liveSessionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [broadcastIntegratedState, canPublishCapture, captureStatus, error, integratedMode, liveSessionStatus]);
 
   useEffect(() => {
-    if (!integratedMode || deviceRole !== "camera" || captureStatus !== "preview") {
+    if (!integratedMode || !canPublishCapture || captureStatus !== "preview") {
       stopRemotePreviewFrameLoop();
       return;
     }
@@ -1182,7 +1325,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
         previewFrameLoopIdRef.current += 1;
       }
     };
-  }, [captureStatus, deviceRole, integratedMode, previewSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canPublishCapture, captureStatus, integratedMode, previewSessionId, runRemotePreviewFrameLoop]);
 
   useEffect(() => {
     if (!boardFeaturesEnabled) {
@@ -1294,6 +1437,31 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
       appendSessionTranscriptLine(`Sistema: Lugar ${seat.seatIndex + 1} ficou vazio`);
     });
   }, [integratedMode, linkedStageContext]);
+
+  useEffect(() => {
+    if (!integratedMode || !linkedStageOption) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void syncLinkedStageSession();
+    }, 260);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    captureStatus,
+    deviceRole,
+    hasFinishedSession,
+    integratedMode,
+    linkedStageContext,
+    linkedStageOption,
+    liveSessionStatus,
+    remoteBridgeStatus,
+    syncLinkedStageSession,
+    transcriptFeed,
+  ]);
 
   useEffect(() => {
     if (
@@ -1680,13 +1848,6 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
     return `Partida ${linkedStageContext.currentMatchNumber}`;
   }, [linkedStageContext, linkedStageOption]);
 
-  const linkedSeatSummaries = useMemo(() => {
-    if (!linkedStageContext) {
-      return [];
-    }
-
-    return linkedStageContext.seatAssignments.filter((seat) => Boolean(seat.playerName));
-  }, [linkedStageContext]);
   const linkedBlindLabel =
     linkedStageContext?.currentBlindLabel ??
     (linkedStageOption ? "Blind aguardando mesa" : "Blind indisponivel");
@@ -1786,6 +1947,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   async function startPreview() {
     try {
       setError("");
+      setHasFinishedSession(false);
 
       if (isRemoteMonitor) {
         setRemoteBridgeStatus("Enviando comando para a fonte abrir o preview...");
@@ -1978,6 +2140,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
   async function startLiveSession() {
     try {
       setTranscriptError("");
+      setHasFinishedSession(false);
 
       if (isRemoteMonitor) {
         setRemoteBridgeStatus("Enviando comando para a fonte iniciar a sessao continua...");
@@ -2169,6 +2332,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
     liveSessionStatusRef.current = "idle";
     setLiveSessionStatus("idle");
+    setHasFinishedSession(true);
     commandLoopIdRef.current += 1;
     stopCommandRecognition();
     setCommandEngineLabel("Sessao parada");
@@ -3671,7 +3835,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
 
       setSelectedVideoId(videoId);
       setSelectedVideoUrl(URL.createObjectURL(blob));
-      setActiveView("videos");
+      handleSelectVideosMode();
     } catch (openError) {
       setTranscriptError(
         openError instanceof Error
@@ -3855,34 +4019,28 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <SubmenuCard
-            active={activeView === "capture"}
-            description={
-              integratedMode
-                ? "Use no celular ou aparelho que vai abrir a camera e enviar o preview da transmissao."
-                : "Preview da camera, sessao continua e teste direto da transcricao."
-            }
-            label={integratedMode ? "Este aparelho transmite" : "Captura ao vivo"}
-            onClick={integratedMode ? handleSelectCaptureMode : () => setActiveView("capture")}
-          />
-          <SubmenuCard
-            active={activeView === "admin"}
-            description={
-              integratedMode
-                ? "Use no PC ou segundo celular para monitorar a captura, controlar a sessao e revisar comandos."
-                : "Comandos detectados, maos abertas e supervisao da gravacao local."
-            }
-            label={integratedMode ? "Este aparelho monitora" : "Administracao"}
-            onClick={integratedMode ? handleSelectMonitorMode : () => setActiveView("admin")}
-          />
-          <SubmenuCard
-            active={activeView === "videos"}
-            description={integratedMode ? "Maos realmente salvas para revisar, assistir e enviar para analise." : "Lista dos cortes ja salvos para assistir, revisar e excluir."}
-            label="Videos salvos"
-            onClick={() => setActiveView("videos")}
-          />
-        </section>
+        {!integratedMode ? (
+          <section className="grid gap-4 md:grid-cols-3">
+            <SubmenuCard
+              active={activeView === "capture"}
+              description="Preview da camera, sessao continua e teste direto da transcricao."
+              label="Captura ao vivo"
+              onClick={() => setActiveView("capture")}
+            />
+            <SubmenuCard
+              active={activeView === "admin"}
+              description="Comandos detectados, maos abertas e supervisao da gravacao local."
+              label="Administracao"
+              onClick={() => setActiveView("admin")}
+            />
+            <SubmenuCard
+              active={activeView === "videos"}
+              description="Lista dos cortes ja salvos para assistir, revisar e excluir."
+              label="Videos salvos"
+              onClick={handleSelectVideosMode}
+            />
+          </section>
+        ) : null}
 
         {activeView === "videos" ? (
           <section className="grid w-full max-w-full gap-6">
@@ -4087,6 +4245,16 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                 onClick={stopStream}
                 tone="muted"
               />
+              {isIntegratedTransmitView ? (
+                <ActionButton
+                  label="Administrar neste aparelho"
+                  onClick={() => {
+                    handleSelectFullMode();
+                    onRequestModeChange?.("full");
+                  }}
+                  tone="muted"
+                />
+              ) : null}
             </div>
 
             {integratedMode ? (
@@ -4095,12 +4263,75 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                   <MetricCard label="Etapa vinculada" value={linkedStageTitle} />
                   <MetricCard label="Partida ativa" value={linkedMatchLabel} />
                   <MetricCard label="Blind atual" value={linkedBlindLabel} />
-                  <MetricCard label="Modo" value="Fonte de captura" />
+                  <MetricCard
+                    label="Modo"
+                    value={isIntegratedTransmitView ? "Fonte de captura" : "Operacao integrada"}
+                  />
                 </div>
 
                 <p className="mt-4 rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)] px-4 py-3 text-sm text-[rgba(237,226,197,0.76)]">
                   Ponte remota: {remoteBridgeStatus}
                 </p>
+              </div>
+            ) : null}
+
+            {(!integratedMode || isIntegratedTransmitView) ? (
+              <div className="mt-4 rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] p-4">
+                <p className="text-[0.72rem] uppercase tracking-[0.2em] text-[rgba(240,227,189,0.48)]">
+                  Dispositivos da captura
+                </p>
+                <div className="mt-4 grid gap-4">
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[rgba(255,239,192,0.92)]">
+                      Camera
+                    </span>
+                    <select
+                      className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
+                      disabled={isLoadingDevices || videoDevices.length === 0}
+                      onChange={(event) => setSelectedVideoDeviceId(event.target.value)}
+                      value={selectedVideoDeviceId}
+                    >
+                      {videoDevices.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[rgba(255,239,192,0.92)]">
+                      Microfone
+                    </span>
+                    <select
+                      className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
+                      disabled={isLoadingDevices || audioDevices.length === 0}
+                      onChange={(event) => setSelectedAudioDeviceId(event.target.value)}
+                      value={selectedAudioDeviceId}
+                    >
+                      {audioDevices.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <ToggleCard
+                      description="Mantem a camera da live ligada para o preview e os futuros cortes."
+                      isActive={isVideoEnabled}
+                      label="Video ativo"
+                      onToggle={() => setIsVideoEnabled((current) => !current)}
+                    />
+                    <ToggleCard
+                      description="Usa o audio da propria camera para a transcricao continua da sessao."
+                      isActive={isAudioEnabled}
+                      label="Audio ativo"
+                      onToggle={() => setIsAudioEnabled((current) => !current)}
+                    />
+                  </div>
+                </div>
               </div>
             ) : null}
 
@@ -4173,16 +4404,19 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                     {integratedMode ? (
                       <ActionButton
                         label={
-                          deviceRole === "camera"
+                          isIntegratedFullView
                             ? "Voltar para monitorar"
                             : "Este aparelho tambem transmite"
                         }
                         onClick={
-                          deviceRole === "camera"
-                            ? handleSelectMonitorMode
+                          isIntegratedFullView
+                            ? () => {
+                                handleSelectMonitorMode();
+                                onRequestModeChange?.("monitor");
+                              }
                             : handleEnableLocalCaptureFromAdmin
                         }
-                        tone={deviceRole === "camera" ? "muted" : "accent"}
+                        tone={isIntegratedFullView ? "muted" : "accent"}
                       />
                     ) : null}
                   </div>
@@ -4269,36 +4503,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                     Motor de comando: {commandEngineLabel}
                   </p>
 
-                  {integratedMode ? (
-                    <div className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)] p-4">
-                      <p className="text-[0.72rem] uppercase tracking-[0.2em] text-[rgba(240,227,189,0.48)]">
-                        Vínculo da transmissão
-                      </p>
-                      <div className="mt-3 grid gap-4 md:grid-cols-3">
-                        <InfoLine label="Etapa" value={linkedStageTitle} />
-                        <InfoLine label="Partida" value={linkedMatchLabel} />
-                        <InfoLine label="Blind" value={linkedBlindLabel} />
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {linkedSeatSummaries.length === 0 ? (
-                          <span className="text-sm text-[rgba(237,226,197,0.72)]">
-                            Nenhum assento confirmado ainda. A transmissao vai puxar os lugares assim que a mesa salvar a partida atual.
-                          </span>
-                        ) : (
-                          linkedSeatSummaries.map((seat) => (
-                            <span
-                              key={`admin-seat-${seat.seatIndex}`}
-                              className="rounded-full border border-[rgba(255,208,101,0.14)] bg-[rgba(255,255,255,0.03)] px-3 py-2 text-xs uppercase tracking-[0.16em] text-[rgba(255,239,192,0.92)]"
-                            >
-                              Lugar {seat.seatIndex + 1}: {seat.playerName}
-                            </span>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {(!integratedMode || deviceRole === "camera") ? (
+                  {(!integratedMode || canPublishCapture) ? (
                     <>
                       <label className="grid gap-2">
                         <span className="text-sm font-semibold text-[rgba(255,239,192,0.92)]">
@@ -4366,71 +4571,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
               </section>
             </div>
 
-            {integratedMode ? (
-              <section className="rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
-                <p className="text-[0.72rem] uppercase tracking-[0.24em] text-[rgba(240,227,189,0.5)]">
-                  Integracao com a mesa
-                </p>
-                <h2 className="mt-2 text-2xl font-bold text-[rgba(255,239,192,0.96)]">
-                  Dados herdados da partida
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-[rgba(237,226,197,0.72)]">
-                  O modulo principal usa a etapa vinculada para preencher blind, lugares e numero da partida no TXT da live. A deteccao visual do board continua em standby no laboratorio separado.
-                </p>
-
-                <div className="mt-5 grid gap-4 md:grid-cols-3">
-                  <MetricCard label="Etapa" value={linkedStageTitle} />
-                  <MetricCard label="Partida atual" value={linkedMatchLabel} />
-                  <MetricCard label="Blind da mesa" value={linkedBlindLabel} />
-                </div>
-
-                <div className="mt-5 rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)] p-4">
-                  <p className="text-[0.72rem] uppercase tracking-[0.2em] text-[rgba(240,227,189,0.48)]">
-                    Comandos ativos na live
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {["nova partida", "encerrar partida", "salvar essa mao"].map((command) => (
-                      <span
-                        key={command}
-                        className="rounded-full border border-[rgba(255,208,101,0.14)] bg-[rgba(255,255,255,0.03)] px-3 py-2 text-xs uppercase tracking-[0.16em] text-[rgba(255,239,192,0.92)]"
-                      >
-                        {command}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="mt-4 text-sm leading-7 text-[rgba(237,226,197,0.72)]">
-                    No fluxo principal, a sessao grava continuamente em buffer e so salva o clipe quando a mao recebe o comando de voz para salvar.
-                  </p>
-                </div>
-
-                <div className="mt-5 rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)] p-4">
-                  <p className="text-[0.72rem] uppercase tracking-[0.2em] text-[rgba(240,227,189,0.48)]">
-                    Lugares da mesa
-                  </p>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    {linkedSeatSummaries.length === 0 ? (
-                      <div className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4 text-sm leading-7 text-[rgba(237,226,197,0.68)] sm:col-span-2">
-                        Nenhum lugar confirmado ainda para esta partida.
-                      </div>
-                    ) : (
-                      linkedSeatSummaries.map((seat) => (
-                        <div
-                          key={`linked-seat-card-${seat.seatIndex}`}
-                          className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4"
-                        >
-                          <p className="text-[0.68rem] uppercase tracking-[0.18em] text-[rgba(240,227,189,0.48)]">
-                            Lugar {seat.seatIndex + 1}
-                          </p>
-                          <p className="mt-2 text-base font-bold text-[rgba(255,239,192,0.96)]">
-                            {seat.playerName}
-                          </p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </section>
-            ) : (
+            {!integratedMode ? (
               <section className="rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
                 <p className="text-[0.72rem] uppercase tracking-[0.24em] text-[rgba(240,227,189,0.5)]">
                   Monitoramento do board
@@ -4786,7 +4927,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                   </span>
                 </div>
               </section>
-            )}
+            ) : null}
           </section>
         ) : null}
 
@@ -4883,7 +5024,7 @@ export function LiveLabPage({ mode = "lab", linkedStageOption = null }: LiveLabP
                         />
                         <ActionButton
                           label="Ir para videos"
-                          onClick={() => setActiveView("videos")}
+                          onClick={handleSelectVideosMode}
                           tone="muted"
                         />
                       </div>

@@ -33,6 +33,7 @@ build-full.log
 *.pem
 data/stage-runtime-*.json
 data/stage-logs/
+data/stage-sessions/
 
 # debug
 npm-debug.log*

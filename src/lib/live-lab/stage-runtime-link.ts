@@ -7,6 +7,7 @@ import {
   normalizeStageRuntimePayload,
   type StoredStageRuntimePayload,
 } from "@/lib/live-lab/stage-runtime-shared";
+import { buildStageSessionStorageKey } from "@/lib/live-lab/stage-session-shared";
 
 export type LiveLinkedSeatAssignment = {
   seatIndex: number;
@@ -84,7 +85,7 @@ export function readLinkedStageContext(
 
 export async function fetchLinkedStageContext(option: LiveLinkedStageOption) {
   try {
-    const response = await fetch(`/api/shpl-admin/stage-runtime?stageId=${option.stageId}`, {
+    const response = await fetch(`/api/shpl-admin/stage-session?stageId=${option.stageId}`, {
       cache: "no-store",
     });
 
@@ -92,17 +93,26 @@ export async function fetchLinkedStageContext(option: LiveLinkedStageOption) {
       throw new Error("Falha ao carregar a etapa vinculada.");
     }
 
-    const payload = (await response.json()) as { runtime?: StoredStageRuntimePayload | null };
+    const payload = (await response.json()) as {
+      session?: {
+        runtime?: StoredStageRuntimePayload | null;
+      } | null;
+    };
+    const runtime = payload.session?.runtime ?? null;
 
-    if (payload.runtime) {
+    if (runtime) {
       if (typeof window !== "undefined") {
         window.localStorage.setItem(
           buildStageRuntimeStorageKey(option.stageId),
-          JSON.stringify(payload.runtime),
+          JSON.stringify(runtime),
+        );
+        window.localStorage.setItem(
+          buildStageSessionStorageKey(option.stageId),
+          JSON.stringify(payload.session),
         );
       }
 
-      const serialized = JSON.stringify(payload.runtime);
+      const serialized = JSON.stringify(runtime);
       return readLinkedStageContextFromSerialized(option, serialized);
     }
   } catch {
