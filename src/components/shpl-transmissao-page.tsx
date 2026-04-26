@@ -40,8 +40,8 @@ export function SHPLTransmissaoPage({
   }
 
   return (
-    <div className="grid gap-6">
-      <section className="rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
+    <div className="grid w-full min-w-0 max-w-full gap-6">
+      <section className="w-full min-w-0 max-w-full rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <p className="text-[0.72rem] uppercase tracking-[0.28em] text-[rgba(240,227,189,0.56)]">
@@ -89,7 +89,7 @@ export function SHPLTransmissaoPage({
       </section>
 
       {selectedMode === "hub" ? (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid w-full min-w-0 max-w-full gap-4 md:grid-cols-2 2xl:grid-cols-4">
           <HubModeCard
             description="Use no celular que vai ficar no tripé, focado só na captura da câmera e da sessão."
             label="Este aparelho transmite"
@@ -112,8 +112,8 @@ export function SHPLTransmissaoPage({
           />
         </section>
       ) : (
-        <section className="grid gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.4rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4">
+        <section className="grid w-full min-w-0 max-w-full gap-4">
+          <div className="flex w-full min-w-0 max-w-full flex-wrap items-center justify-between gap-3 rounded-[1.4rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4">
             <div>
               <p className="text-[0.72rem] uppercase tracking-[0.2em] text-[rgba(240,227,189,0.48)]">
                 Modo ativo
@@ -166,7 +166,7 @@ function HubModeCard({
 }) {
   return (
     <button
-      className="rounded-[1.5rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(255,255,255,0.03)] p-5 text-left transition hover:border-[rgba(255,208,101,0.3)] hover:bg-[rgba(255,255,255,0.05)]"
+      className="w-full min-w-0 rounded-[1.5rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(255,255,255,0.03)] p-5 text-left transition hover:border-[rgba(255,208,101,0.3)] hover:bg-[rgba(255,255,255,0.05)]"
       onClick={onClick}
       type="button"
     >

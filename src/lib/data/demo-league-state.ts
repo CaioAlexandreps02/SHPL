@@ -5,7 +5,7 @@ import {
   readServerJsonDocument,
   writeServerJsonDocument,
 } from "@/lib/data/server-json-store";
-import { formatCurrency } from "@/lib/domain/rules";
+import { calculateMatchPoints, formatCurrency } from "@/lib/domain/rules";
 import type {
   AnnualStagePoints,
   HistoryStageSummary,
@@ -52,6 +52,12 @@ export type FinalizeStageInput = {
   players: FinalizeStagePlayerPayload[];
   buyInAnnual: number;
   buyInDaily: number;
+};
+
+export type UpdateStageMatchPlacementsInput = {
+  stageId: string;
+  matchNumber: number;
+  placementsByPlayerId: Record<string, number | null>;
 };
 
 const stateDocumentName = "demo-league-state.json";
@@ -198,23 +204,6 @@ export async function finalizeStage(input: FinalizeStageInput) {
     throw new Error("Essa etapa ja foi encerrada anteriormente.");
   }
 
-  if (stage.isTest) {
-    await saveStoredStage({
-      id: stage.id,
-      title: stage.title,
-      stageDate: stage.stageDate,
-      status: "finished",
-      scheduledStartTime: stage.scheduledStartTime,
-      isTest: true,
-    });
-
-    return {
-      historySummary: null,
-      historyDetail: null,
-      isTestStage: true,
-    };
-  }
-
   const players = storedPlayers.map((player) => ({
     id: player.id,
     name: player.nickname || player.fullName,
@@ -296,6 +285,7 @@ export async function finalizeStage(input: FinalizeStageInput) {
     Math.max(input.buyInDaily, 0) *
     input.players.filter((player) => player.dailyPaid).length *
     100;
+  const effectiveAnnualContributionCents = stage.isTest ? 0 : annualContributionCents;
   const actualEnd = new Date(input.closedAt);
   const actualStart =
     input.actualStageStartedAt !== null ? new Date(input.actualStageStartedAt) : null;
@@ -312,7 +302,7 @@ export async function finalizeStage(input: FinalizeStageInput) {
     totalDurationSeconds,
     playerNameById,
     dailyPrizeCents,
-    annualContributionCents,
+    annualContributionCents: effectiveAnnualContributionCents,
   });
   const historySummary: HistoryStageSummary = {
     id: stage.id,
@@ -321,8 +311,42 @@ export async function finalizeStage(input: FinalizeStageInput) {
     winnerName: finalRanking[0]?.playerName ?? "-",
     matchesPlayed: stageMatchRecord.matches.length,
     dailyPrize: formatCurrency(dailyPrizeCents / 100),
-    annualPotContribution: formatCurrency(annualContributionCents / 100),
+    annualPotContribution: formatCurrency(effectiveAnnualContributionCents / 100),
+    isTest: stage.isTest ?? false,
   };
+  const historyDetailWithStageType: StageHistoryDetail = {
+    ...historyDetail,
+    isTest: stage.isTest ?? false,
+  };
+
+  if (stage.isTest) {
+    await writeState({
+      annualRankingStats: state.annualRankingStats,
+      annualStagePoints: state.annualStagePoints,
+      stageMatchPoints: state.stageMatchPoints,
+      history: sortHistoryByDate([...state.history, historySummary], storedStages),
+      stageHistoryDetails: sortStageHistoryByDate(
+        [...state.stageHistoryDetails, historyDetailWithStageType],
+        storedStages
+      ),
+      annualPotCents: state.annualPotCents,
+    });
+
+    await saveStoredStage({
+      id: stage.id,
+      title: stage.title,
+      stageDate: stage.stageDate,
+      status: "finished",
+      scheduledStartTime: stage.scheduledStartTime,
+      isTest: true,
+    });
+
+    return {
+      historySummary,
+      historyDetail: historyDetailWithStageType,
+      isTestStage: true,
+    };
+  }
 
   await writeState({
     annualRankingStats: nextStats,
@@ -336,7 +360,7 @@ export async function finalizeStage(input: FinalizeStageInput) {
     ),
     history: sortHistoryByDate([...state.history, historySummary], storedStages),
     stageHistoryDetails: sortStageHistoryByDate(
-      [...state.stageHistoryDetails, historyDetail],
+      [...state.stageHistoryDetails, historyDetailWithStageType],
       storedStages
     ),
     annualPotCents: state.annualPotCents + annualContributionCents,
@@ -353,8 +377,176 @@ export async function finalizeStage(input: FinalizeStageInput) {
 
   return {
     historySummary,
-    historyDetail,
+    historyDetail: historyDetailWithStageType,
     isTestStage: false,
+  };
+}
+
+export async function updateStageMatchPlacements(input: UpdateStageMatchPlacementsInput) {
+  const [state, storedPlayers, storedStages] = await Promise.all([
+    readState(),
+    getStoredPlayers(),
+    getStoredStages(),
+  ]);
+  const stageRecord = state.stageMatchPoints.find((stage) => stage.stageId === input.stageId);
+  const stageHistoryDetail = state.stageHistoryDetails.find((stage) => stage.stageId === input.stageId);
+  const historySummary = state.history.find((stage) => stage.id === input.stageId);
+  const storedStage = storedStages.find((stage) => stage.id === input.stageId);
+
+  if (!stageRecord || !stageHistoryDetail || !historySummary || !storedStage) {
+    throw new Error("Nao foi possivel localizar a etapa finalizada para ajuste manual.");
+  }
+
+  const targetMatch = stageRecord.matches.find((match) => match.matchNumber === input.matchNumber);
+
+  if (!targetMatch) {
+    throw new Error("A partida informada nao existe nessa etapa.");
+  }
+
+  const normalizedPlacements = Object.entries(input.placementsByPlayerId)
+    .filter(([, placement]) => typeof placement === "number" && Number.isFinite(placement) && (placement ?? 0) > 0)
+    .map(([playerId, placement]) => ({
+      playerId,
+      placement: Number(placement),
+    }));
+
+  if (normalizedPlacements.length === 0) {
+    throw new Error("Informe pelo menos uma colocacao para aplicar o ajuste manual.");
+  }
+
+  const usedPlacements = new Set<number>();
+
+  for (const selection of normalizedPlacements) {
+    if (usedPlacements.has(selection.placement)) {
+      throw new Error("As colocacoes da partida nao podem se repetir.");
+    }
+
+    usedPlacements.add(selection.placement);
+  }
+
+  const orderedPlacements = [...usedPlacements].sort((left, right) => left - right);
+
+  if (orderedPlacements.some((placement, index) => placement !== index + 1)) {
+    throw new Error(
+      "As colocacoes precisam ser continuas, comecando no 1o lugar e seguindo sem pular posicoes."
+    );
+  }
+
+  const playerIds = Array.from(
+    new Set([
+      ...storedPlayers.map((player) => player.id),
+      ...Object.keys(targetMatch.pointsByPlayer),
+      ...Object.keys(input.placementsByPlayerId),
+    ])
+  );
+  const placementsByPlayerId = new Map(normalizedPlacements.map((entry) => [entry.playerId, entry.placement]));
+  const updatedStageMatchRecord: StageMatchPoints = {
+    ...stageRecord,
+    matches: stageRecord.matches.map((match) => {
+      if (match.matchNumber !== input.matchNumber) {
+        return match;
+      }
+
+      return {
+        ...match,
+        pointsByPlayer: Object.fromEntries(
+          playerIds.map((playerId) => {
+            const placement = placementsByPlayerId.get(playerId);
+            return [playerId, placement ? calculateMatchPoints(placement) : 0];
+          })
+        ),
+      };
+    }),
+  };
+  const playerNameById = new Map(
+    storedPlayers.map((player) => [player.id, player.nickname || player.fullName])
+  );
+  const updatedFinalRanking = buildFinalRankingFromStageMatchRecord(updatedStageMatchRecord, playerNameById);
+  const updatedStageHistoryDetail: StageHistoryDetail = {
+    ...stageHistoryDetail,
+    winnerName: updatedFinalRanking[0]?.playerName ?? "-",
+    matchesPlayed: updatedStageMatchRecord.matches.length,
+    finalRanking: updatedFinalRanking,
+    matches: stageHistoryDetail.matches.map((match) => {
+      const updatedMatch = updatedStageMatchRecord.matches.find(
+        (entry) => entry.matchNumber === match.matchNumber
+      );
+
+      if (!updatedMatch) {
+        return match;
+      }
+
+      return {
+        ...match,
+        ranking: buildMatchRanking(updatedMatch.pointsByPlayer, playerNameById),
+      };
+    }),
+  };
+  const updatedHistorySummary: HistoryStageSummary = {
+    ...historySummary,
+    winnerName: updatedFinalRanking[0]?.playerName ?? "-",
+    matchesPlayed: updatedStageMatchRecord.matches.length,
+  };
+  const updatedAnnualStagePoints = storedStage.isTest
+    ? state.annualStagePoints
+    : state.annualStagePoints.map((stage) => {
+        if (stage.stageId !== input.stageId) {
+          return stage;
+        }
+
+        const previousPointsByPlayer = stage.pointsByPlayer;
+        return {
+          ...stage,
+          pointsByPlayer: Object.fromEntries(
+            playerIds.map((playerId) => {
+              const previousPoints = previousPointsByPlayer[playerId] ?? 0;
+              const rankingEntry = updatedFinalRanking.find((entry) => entry.playerId === playerId);
+
+              if (!rankingEntry) {
+                return [playerId, 0];
+              }
+
+              if (previousPoints === 1) {
+                return [playerId, 1];
+              }
+
+              return [playerId, calculateAnnualPoints(rankingEntry.position, false)];
+            })
+          ),
+        };
+      });
+  const updatedStageHistoryDetails = sortStageHistoryByDate(
+    state.stageHistoryDetails.map((stage) =>
+      stage.stageId === input.stageId ? updatedStageHistoryDetail : stage
+    ),
+    storedStages
+  );
+  const updatedHistory = sortHistoryByDate(
+    state.history.map((stage) => (stage.id === input.stageId ? updatedHistorySummary : stage)),
+    storedStages
+  );
+  const updatedStageMatchPoints = sortStageMatchPointsByDate(
+    state.stageMatchPoints.map((stage) =>
+      stage.stageId === input.stageId ? updatedStageMatchRecord : stage
+    ),
+    storedStages
+  );
+  const updatedAnnualRankingStats = storedStage.isTest
+    ? state.annualRankingStats
+    : rebuildAnnualRankingStats(storedPlayers, updatedAnnualStagePoints, updatedStageHistoryDetails);
+
+  await writeState({
+    annualRankingStats: updatedAnnualRankingStats,
+    annualStagePoints: updatedAnnualStagePoints,
+    stageMatchPoints: updatedStageMatchPoints,
+    history: updatedHistory,
+    stageHistoryDetails: updatedStageHistoryDetails,
+    annualPotCents: state.annualPotCents,
+  });
+
+  return {
+    stageHistoryDetail: updatedStageHistoryDetail,
+    stageMatchRecord: updatedStageMatchRecord,
   };
 }
 
@@ -539,6 +731,49 @@ function buildFinalRanking(
     }));
 }
 
+function buildFinalRankingFromStageMatchRecord(
+  stageMatchRecord: StageMatchPoints,
+  playerNameById: Map<string, string>
+) {
+  return Array.from(
+    new Set(stageMatchRecord.matches.flatMap((match) => Object.keys(match.pointsByPlayer)))
+  )
+    .map((playerId) => {
+      const matchPoints = stageMatchRecord.matches.map((match) => match.pointsByPlayer[playerId] ?? 0);
+      return {
+        playerId,
+        playerName: playerNameById.get(playerId) ?? "Jogador",
+        totalPoints: matchPoints.reduce((total, value) => total + value, 0),
+        wins: matchPoints.filter((value) => value === 10).length,
+        secondPlaces: matchPoints.filter((value) => value === 8).length,
+        thirdPlaces: matchPoints.filter((value) => value === 6).length,
+      };
+    })
+    .sort((left, right) => {
+      if (right.wins !== left.wins) {
+        return right.wins - left.wins;
+      }
+
+      if (right.totalPoints !== left.totalPoints) {
+        return right.totalPoints - left.totalPoints;
+      }
+
+      if (right.secondPlaces !== left.secondPlaces) {
+        return right.secondPlaces - left.secondPlaces;
+      }
+
+      if (right.thirdPlaces !== left.thirdPlaces) {
+        return right.thirdPlaces - left.thirdPlaces;
+      }
+
+      return left.playerName.localeCompare(right.playerName, "pt-BR");
+    })
+    .map((player, index) => ({
+      ...player,
+      position: index + 1,
+    }));
+}
+
 function buildStageHistoryDetail(input: {
   stage: { id: string; title: string; stageDate: string };
   actualStart: Date | null;
@@ -611,6 +846,34 @@ function buildMatchRanking(
       ...entry,
       position: index + 1,
     }));
+}
+
+function rebuildAnnualRankingStats(
+  storedPlayers: Awaited<ReturnType<typeof getStoredPlayers>>,
+  annualStagePoints: AnnualStagePoints[],
+  stageHistoryDetails: StageHistoryDetail[]
+) {
+  return storedPlayers.map((player) => {
+    const nonTestDetails = stageHistoryDetails.filter((stage) => !stage.isTest);
+    const points = annualStagePoints.reduce(
+      (total, stage) => total + (stage.pointsByPlayer[player.id] ?? 0),
+      0
+    );
+
+    return {
+      playerId: player.id,
+      points,
+      wins: nonTestDetails.filter((stage) =>
+        stage.finalRanking.some((entry) => entry.playerId === player.id && entry.position === 1)
+      ).length,
+      secondPlaces: nonTestDetails.filter((stage) =>
+        stage.finalRanking.some((entry) => entry.playerId === player.id && entry.position === 2)
+      ).length,
+      thirdPlaces: nonTestDetails.filter((stage) =>
+        stage.finalRanking.some((entry) => entry.playerId === player.id && entry.position === 3)
+      ).length,
+    };
+  });
 }
 
 function formatStageDateLabel(isoDate: string) {

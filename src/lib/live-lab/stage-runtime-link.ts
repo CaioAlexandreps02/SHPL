@@ -29,6 +29,9 @@ export type LiveLinkedStageContext = {
   stageDateLabel: string;
   currentLevelIndex: number;
   currentBlindLabel: string | null;
+  remainingSeconds: number;
+  matchElapsedSeconds: number;
+  isRunning: boolean;
   currentMatchNumber: number;
   seatAssignments: LiveLinkedSeatAssignment[];
   currentMatchClosed: boolean;
@@ -73,6 +76,9 @@ export function readLinkedStageContext(
       stageDateLabel: option.stageDateLabel,
       currentLevelIndex,
       currentBlindLabel: currentLevel ? buildBlindLabel(currentLevel) : null,
+      remainingSeconds: Math.max(parsed.remainingSeconds ?? 0, 0),
+      matchElapsedSeconds: Math.max(parsed.matchElapsedSeconds ?? 0, 0),
+      isRunning: Boolean(parsed.isRunning),
       currentMatchNumber: Math.max(1, completedMatchCount + (hasOpenMatch ? 1 : 1)),
       seatAssignments: normalizedSeats,
       currentMatchClosed: parsed.currentMatchClosed ?? false,
@@ -148,6 +154,9 @@ function readLinkedStageContextFromSerialized(option: LiveLinkedStageOption, raw
       stageDateLabel: option.stageDateLabel,
       currentLevelIndex,
       currentBlindLabel: currentLevel ? buildBlindLabel(currentLevel) : null,
+      remainingSeconds: Math.max(parsed.remainingSeconds ?? 0, 0),
+      matchElapsedSeconds: Math.max(parsed.matchElapsedSeconds ?? 0, 0),
+      isRunning: Boolean(parsed.isRunning),
       currentMatchNumber: Math.max(1, completedMatchCount + (hasOpenMatch ? 1 : 1)),
       seatAssignments: normalizedSeats,
       currentMatchClosed: parsed.currentMatchClosed ?? false,

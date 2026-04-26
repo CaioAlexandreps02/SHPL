@@ -4,9 +4,17 @@ import { useMemo, useState } from "react";
 
 import type { LeagueSnapshot } from "@/lib/domain/types";
 
-export function SHPLHistoryPage({ snapshot }: { snapshot: LeagueSnapshot }) {
+export function SHPLHistoryPage({
+  initialStageId,
+  snapshot,
+}: {
+  initialStageId?: string;
+  snapshot: LeagueSnapshot;
+}) {
   const [selectedStageId, setSelectedStageId] = useState<string>(
-    snapshot.stageHistoryDetails[0]?.stageId ?? ""
+    snapshot.stageHistoryDetails.some((stage) => stage.stageId === initialStageId)
+      ? initialStageId ?? ""
+      : snapshot.stageHistoryDetails[0]?.stageId ?? ""
   );
 
   const selectedStage = useMemo(
@@ -65,6 +73,11 @@ export function SHPLHistoryPage({ snapshot }: { snapshot: LeagueSnapshot }) {
                   {stage.title}
                 </p>
                 <p className="mt-1 text-sm text-[rgba(236,225,196,0.68)]">{stage.stageDateLabel}</p>
+                {stage.isTest ? (
+                  <span className="mt-3 inline-flex rounded-full border border-[rgba(129,211,120,0.24)] bg-[rgba(129,211,120,0.12)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[rgba(214,255,206,0.92)]">
+                    Etapa de teste
+                  </span>
+                ) : null}
               </button>
             );
           })}
@@ -83,6 +96,11 @@ export function SHPLHistoryPage({ snapshot }: { snapshot: LeagueSnapshot }) {
             <p className="mt-3 text-sm leading-6 text-[rgba(236,225,196,0.74)]">
               Campeao do dia: {selectedStage.winnerName}
             </p>
+            {selectedStage.isTest ? (
+              <span className="mt-3 inline-flex rounded-full border border-[rgba(129,211,120,0.24)] bg-[rgba(129,211,120,0.12)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[rgba(214,255,206,0.92)]">
+                Etapa de teste salva so para consulta
+              </span>
+            ) : null}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -95,8 +113,8 @@ export function SHPLHistoryPage({ snapshot }: { snapshot: LeagueSnapshot }) {
             />
             <HistoryInfoCard label="Premio do dia" value={selectedStage.dailyPrize} />
             <HistoryInfoCard
-              label="Pote anual gerado"
-              value={selectedStage.annualPotContribution}
+              label={selectedStage.isTest ? "Pote anual" : "Pote anual gerado"}
+              value={selectedStage.isTest ? "Nao contabilizado" : selectedStage.annualPotContribution}
             />
             <HistoryInfoCard
               label="Partidas jogadas"

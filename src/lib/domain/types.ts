@@ -111,6 +111,7 @@ export type HistoryStageSummary = {
   matchesPlayed: number;
   dailyPrize: string;
   annualPotContribution: string;
+  isTest?: boolean;
 };
 
 export type StageHistoryMatchRankingEntry = {
@@ -153,6 +154,7 @@ export type StageHistoryDetail = {
   matchesPlayed: number;
   finalRanking: StageHistoryFinalRankingEntry[];
   matches: StageHistoryMatchDetail[];
+  isTest?: boolean;
 };
 
 export type LiveControls = {

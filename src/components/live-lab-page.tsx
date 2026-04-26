@@ -63,6 +63,15 @@ type LiveSessionStatus = "idle" | "running" | "paused";
 type LiveLabMode = "lab" | "integrated";
 type IntegratedDeviceRole = "camera" | "monitor" | "complete";
 type CommandKind = "start" | "end" | "save" | "none";
+type LiveTranscriptStreet = "preflop" | "flop" | "turn" | "river" | "showdown";
+type LiveTranscriptAction =
+  | "fold"
+  | "check"
+  | "call"
+  | "bet"
+  | "raise"
+  | "all-in"
+  | "amount-only";
 type TranscriptEntry = {
   id: string;
   at: string;
@@ -80,6 +89,30 @@ type ActiveHandSession = {
   mimeType: string;
   recorder: MediaRecorder;
   chunks: Blob[];
+};
+type CompletedHandSession = {
+  id: string;
+  title: string;
+  startedAt: string;
+  endedAt: string;
+  durationSeconds: number;
+  sizeBytes: number;
+  mimeType: string;
+  startTrigger: string;
+  endTrigger: string;
+  transcriptLog: string[];
+  linkedStageId: string | null;
+  linkedStageTitle: string | null;
+  linkedMatchLabel: string;
+  linkedBlindLabel: string | null;
+  blob: Blob;
+  saved: boolean;
+};
+type LiveHandTrackerState = {
+  lastStreet: LiveTranscriptStreet | null;
+  lastPlayerCountHint: number | null;
+  readyToAutoClose: boolean;
+  lastUsefulTranscriptAt: number | null;
 };
 type PhotoCardImportBox = {
   x: number;
@@ -194,6 +227,34 @@ type LiveRemoteMessage =
       candidate: RTCIceCandidateInit;
     };
 
+function resolveIntegratedDeviceRole(
+  entryMode?: Exclude<LiveSessionHubMode, "hub">,
+): IntegratedDeviceRole {
+  if (entryMode === "monitor") {
+    return "monitor";
+  }
+
+  if (entryMode === "full") {
+    return "complete";
+  }
+
+  return "camera";
+}
+
+function resolveIntegratedActiveView(
+  entryMode?: Exclude<LiveSessionHubMode, "hub">,
+): LiveLabView {
+  if (entryMode === "videos") {
+    return "videos";
+  }
+
+  if (entryMode === "monitor" || entryMode === "full") {
+    return "admin";
+  }
+
+  return "capture";
+}
+
 const STORAGE_KEY = "shpl-live-lab-settings";
 const BOARD_REGION_STORAGE_KEY = "shpl-live-lab-board-region";
 const INTEGRATED_DEVICE_ROLE_STORAGE_KEY = "shpl-live-lab-integrated-device-role";
@@ -212,6 +273,8 @@ const defaultBoardRegion: BoardRegion = {
   height: 18,
 };
 const COMMAND_SAMPLE_DURATION_MS = 3500;
+const NEXT_HAND_AUTO_START_DELAY_MS = 10000;
+const RECENT_COMPLETED_HAND_SAVE_WINDOW_MS = 45000;
 const CARD_RANK_OPTIONS = ["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"];
 const CARD_SUIT_OPTIONS = ["copas", "espadas", "ouros", "paus"];
 const LIVE_REMOTE_ICE_CONFIGURATION: RTCConfiguration = {
@@ -272,6 +335,15 @@ export function LiveLabPage({
   const sessionTranscriptStartedAtRef = useRef<string>("");
   const sessionTranscriptLinesRef = useRef<string[]>([]);
   const recentTranscriptSignaturesRef = useRef<Array<{ key: string; at: number }>>([]);
+  const recentCompletedHandRef = useRef<CompletedHandSession | null>(null);
+  const autoFinalizeHandTimeoutRef = useRef<number | null>(null);
+  const autoStartNextHandTimeoutRef = useRef<number | null>(null);
+  const liveHandTrackerRef = useRef<LiveHandTrackerState>({
+    lastStreet: null,
+    lastPlayerCountHint: null,
+    readyToAutoClose: false,
+    lastUsefulTranscriptAt: null,
+  });
   const boardRegionRef = useRef<BoardRegion>(defaultBoardRegion);
   const latestBoardDetectionRef = useRef<BoardDetectionResult | null>(null);
   const previousLinkedStageContextRef = useRef<LiveLinkedStageContext | null>(null);
@@ -304,14 +376,17 @@ export function LiveLabPage({
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [transcriptError, setTranscriptError] = useState("");
-  const [activeView, setActiveView] = useState<LiveLabView>("capture");
+  const [activeView, setActiveView] = useState<LiveLabView>(() =>
+    mode === "integrated" ? resolveIntegratedActiveView(integratedEntryMode) : "capture",
+  );
   const [liveSessionStatus, setLiveSessionStatus] = useState<LiveSessionStatus>("idle");
-  const [deviceRole, setDeviceRole] = useState<IntegratedDeviceRole>(
-    mode === "integrated" ? "monitor" : "camera",
+  const [deviceRole, setDeviceRole] = useState<IntegratedDeviceRole>(() =>
+    mode === "integrated" ? resolveIntegratedDeviceRole(integratedEntryMode) : "camera",
   );
   const [remoteBridgeStatus, setRemoteBridgeStatus] = useState("Selecione o papel deste dispositivo.");
   const [remotePreviewFrameUrl, setRemotePreviewFrameUrl] = useState("");
   const [transcriptFeed, setTranscriptFeed] = useState<TranscriptEntry[]>([]);
+  const [isTranscriptFeedExpanded, setIsTranscriptFeedExpanded] = useState(false);
   const [activeHandTitle, setActiveHandTitle] = useState("");
   const [activeHandStartedAtIso, setActiveHandStartedAtIso] = useState("");
   const [savedVideos, setSavedVideos] = useState<SavedHandClipSummary[]>([]);
@@ -340,7 +415,12 @@ export function LiveLabPage({
   const isRemoteMonitor = integratedMode && deviceRole === "monitor";
   const canPublishCapture = !integratedMode || deviceRole !== "monitor";
   const isIntegratedTransmitView = integratedMode && integratedEntryMode === "transmit";
+  const isIntegratedMonitorView = integratedMode && integratedEntryMode === "monitor";
   const isIntegratedFullView = integratedMode && integratedEntryMode === "full";
+  const showCaptureSessionControls =
+    !integratedMode || isIntegratedTransmitView || isIntegratedFullView;
+  const showAdminSessionControls = !integratedMode || isIntegratedFullView;
+  const showAdminPreviewControls = !integratedMode || isIntegratedMonitorView || isIntegratedFullView;
   const integratedSessionRole = useMemo<LiveSessionRole>(() => {
     if (deviceRole === "monitor") {
       return "monitor";
@@ -352,25 +432,9 @@ export function LiveLabPage({
     ? `${LIVE_REMOTE_CHANNEL_PREFIX}:${linkedStageOption.stageId}`
     : null;
 
-  function handleSelectMonitorMode() {
-    setDeviceRole("monitor");
-    setActiveView("admin");
-  }
-
-  function handleSelectFullMode() {
-    setDeviceRole("complete");
-    setActiveView("admin");
-  }
-
   function handleSelectVideosMode() {
     setActiveView("videos");
     onRequestModeChange?.("videos");
-  }
-
-  function handleEnableLocalCaptureFromAdmin() {
-    setDeviceRole("complete");
-    setActiveView("admin");
-    onRequestModeChange?.("full");
   }
 
   useEffect(() => {
@@ -378,25 +442,8 @@ export function LiveLabPage({
       return;
     }
 
-    if (integratedEntryMode === "transmit") {
-      setDeviceRole("camera");
-      setActiveView("capture");
-      return;
-    }
-
-    if (integratedEntryMode === "monitor") {
-      setDeviceRole("monitor");
-      setActiveView("admin");
-      return;
-    }
-
-    if (integratedEntryMode === "full") {
-      setDeviceRole("complete");
-      setActiveView("admin");
-      return;
-    }
-
-    setActiveView("videos");
+    setDeviceRole(resolveIntegratedDeviceRole(integratedEntryMode));
+    setActiveView(resolveIntegratedActiveView(integratedEntryMode));
   }, [integratedEntryMode, integratedMode]);
 
   function attachPreviewStream(stream: MediaStream | null) {
@@ -1039,19 +1086,24 @@ export function LiveLabPage({
     getOrCreateIntegratedDeviceId();
 
     if (integratedMode) {
-      const storedDeviceRole = window.localStorage.getItem(
-        INTEGRATED_DEVICE_ROLE_STORAGE_KEY,
-      ) as IntegratedDeviceRole | null;
-
-      if (
-        storedDeviceRole === "camera" ||
-        storedDeviceRole === "monitor" ||
-        storedDeviceRole === "complete"
-      ) {
-        setDeviceRole(storedDeviceRole);
-        setActiveView(storedDeviceRole === "monitor" ? "admin" : "capture");
+      if (integratedEntryMode) {
+        setDeviceRole(resolveIntegratedDeviceRole(integratedEntryMode));
+        setActiveView(resolveIntegratedActiveView(integratedEntryMode));
       } else {
-        setActiveView("admin");
+        const storedDeviceRole = window.localStorage.getItem(
+          INTEGRATED_DEVICE_ROLE_STORAGE_KEY,
+        ) as IntegratedDeviceRole | null;
+
+        if (
+          storedDeviceRole === "camera" ||
+          storedDeviceRole === "monitor" ||
+          storedDeviceRole === "complete"
+        ) {
+          setDeviceRole(storedDeviceRole);
+          setActiveView(storedDeviceRole === "monitor" ? "admin" : "capture");
+        } else {
+          setActiveView("admin");
+        }
       }
     }
 
@@ -1110,7 +1162,7 @@ export function LiveLabPage({
     } finally {
       hasHydratedSettingsRef.current = true;
     }
-  }, [boardFeaturesEnabled, integratedMode, loadDevices]);
+  }, [boardFeaturesEnabled, integratedEntryMode, integratedMode, loadDevices]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !integratedMode) {
@@ -1764,7 +1816,7 @@ export function LiveLabPage({
     return () => {
       boardMonitorLoopIdRef.current += 1;
     };
-  }, []);
+  }, [integratedEntryMode, integratedMode]);
 
   useEffect(() => {
     if (!selectedCardSampleId) {
@@ -1851,10 +1903,29 @@ export function LiveLabPage({
   const linkedBlindLabel =
     linkedStageContext?.currentBlindLabel ??
     (linkedStageOption ? "Blind aguardando mesa" : "Blind indisponivel");
+  const linkedBlindTimerLabel = linkedStageContext
+    ? formatElapsedClock(linkedStageContext.remainingSeconds)
+    : "--:--:--";
+  const linkedMatchElapsedLabel = linkedStageContext
+    ? formatElapsedClock(linkedStageContext.matchElapsedSeconds)
+    : "--:--:--";
+  const linkedTimerStatusLabel = linkedStageContext
+    ? linkedStageContext.isRunning
+      ? "rodando"
+      : "pausado"
+    : "aguardando mesa";
   const linkedStageTitle =
     linkedStageContext?.stageTitle ??
     linkedStageOption?.stageTitle ??
     "Nenhuma etapa vinculada";
+  const lastDetectedCommandLabel = transcriptFeed[0]?.text
+    ? summarizeMetricValue(transcriptFeed[0].text, 54)
+    : "Nenhum comando";
+  const visibleTranscriptFeed =
+    integratedMode && isIntegratedMonitorView && !isTranscriptFeedExpanded
+      ? transcriptFeed.slice(0, 3)
+      : transcriptFeed;
+  const hiddenTranscriptFeedCount = Math.max(0, transcriptFeed.length - visibleTranscriptFeed.length);
 
   const boardCardSummaries = useMemo(() => {
     if (!boardDetection || boardDetection.boxes.length === 0) {
@@ -2143,12 +2214,9 @@ export function LiveLabPage({
       setHasFinishedSession(false);
 
       if (isRemoteMonitor) {
-        setRemoteBridgeStatus("Enviando comando para a fonte iniciar a sessao continua...");
-        await sendLiveRemoteMessage({
-          type: "command",
-          fromId: getOrCreateIntegratedDeviceId(),
-          command: "start-session",
-        });
+        setRemoteBridgeStatus(
+          "Este aparelho esta em modo monitor. Inicie a sessao continua no aparelho que transmite.",
+        );
         return;
       }
 
@@ -2232,6 +2300,9 @@ export function LiveLabPage({
       setTranscriptFeed([]);
       sessionTranscriptStartedAtRef.current = new Date().toISOString();
       sessionTranscriptLinesRef.current = [];
+      recentTranscriptSignaturesRef.current = [];
+      recentCompletedHandRef.current = null;
+      resetLiveHandTracker();
 
       if (currentLinkedStageContext) {
         appendSessionTranscriptLine(
@@ -2278,12 +2349,9 @@ export function LiveLabPage({
 
   function pauseLiveSession() {
     if (isRemoteMonitor) {
-      setRemoteBridgeStatus("Enviando comando para pausar a sessao continua...");
-      void sendLiveRemoteMessage({
-        type: "command",
-        fromId: getOrCreateIntegratedDeviceId(),
-        command: "pause-session",
-      });
+      setRemoteBridgeStatus(
+        "Este aparelho esta em modo monitor. A pausa da sessao continua precisa acontecer no aparelho que transmite.",
+      );
       return;
     }
 
@@ -2295,6 +2363,8 @@ export function LiveLabPage({
     setLiveSessionStatus("paused");
     commandLoopIdRef.current += 1;
     stopCommandRecognition();
+    clearAutomaticHandFinalizeTimeout();
+    clearAutomaticNextHandStartTimeout();
     setCommandEngineLabel("Sessao pausada");
 
     if (sessionRecorderRef.current?.state === "recording") {
@@ -2310,6 +2380,168 @@ export function LiveLabPage({
     });
   }
 
+  function clearAutomaticHandFinalizeTimeout() {
+    if (autoFinalizeHandTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(autoFinalizeHandTimeoutRef.current);
+    }
+
+    autoFinalizeHandTimeoutRef.current = null;
+  }
+
+  function clearAutomaticNextHandStartTimeout() {
+    if (autoStartNextHandTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(autoStartNextHandTimeoutRef.current);
+    }
+
+    autoStartNextHandTimeoutRef.current = null;
+  }
+
+  function resetLiveHandTracker() {
+    clearAutomaticHandFinalizeTimeout();
+    clearAutomaticNextHandStartTimeout();
+    liveHandTrackerRef.current = {
+      lastStreet: null,
+      lastPlayerCountHint: null,
+      readyToAutoClose: false,
+      lastUsefulTranscriptAt: null,
+    };
+  }
+
+  function scheduleAutomaticNextHandStart(delayMs = NEXT_HAND_AUTO_START_DELAY_MS) {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    clearAutomaticNextHandStartTimeout();
+    autoStartNextHandTimeoutRef.current = window.setTimeout(() => {
+      autoStartNextHandTimeoutRef.current = null;
+
+      if (
+        liveSessionStatusRef.current !== "running" ||
+        activeHandRef.current ||
+        !streamRef.current
+      ) {
+        return;
+      }
+
+      appendSessionTranscriptLine(
+        `Sistema: nova mao iniciada automaticamente apos ${Math.round(delayMs / 1000)} segundos`,
+      );
+      startNewHand("nova mao automatica apos intervalo");
+    }, delayMs);
+  }
+
+  async function persistCompletedHand(completedHand: CompletedHandSession) {
+    if (completedHand.saved) {
+      return;
+    }
+
+    await saveHandClip({
+      title: completedHand.title,
+      startedAt: completedHand.startedAt,
+      endedAt: completedHand.endedAt,
+      durationSeconds: completedHand.durationSeconds,
+      sizeBytes: completedHand.sizeBytes,
+      mimeType: completedHand.mimeType,
+      startTrigger: completedHand.startTrigger,
+      endTrigger: completedHand.endTrigger,
+      transcriptLog: completedHand.transcriptLog,
+      linkedStageId: completedHand.linkedStageId,
+      linkedStageTitle: completedHand.linkedStageTitle,
+      linkedMatchLabel: completedHand.linkedMatchLabel,
+      linkedBlindLabel: completedHand.linkedBlindLabel,
+      blob: completedHand.blob,
+    });
+
+    completedHand.saved = true;
+    recentCompletedHandRef.current = completedHand;
+    await refreshSavedVideos();
+  }
+
+  function handleAutomaticLiveHandLifecycle({
+    cleanText,
+    normalized,
+    command,
+  }: {
+    cleanText: string;
+    normalized: string;
+    command: CommandKind;
+  }) {
+    const street = detectLiveTranscriptStreet(normalized);
+    const action = detectLiveTranscriptAction(normalized);
+    const playerCountHint =
+      street === null ? null : extractStreetPlayerCountHintFromNormalized(normalized, street);
+    const isBlindSetupCue = looksLikeBlindSetupSpeech(normalized);
+    const isUsefulProgressSignal =
+      street !== null ||
+      action !== null ||
+      isBlindSetupCue ||
+      looksLikeButtonSyncSpeech(normalized) ||
+      looksLikeAmountOnlySpeech(normalized) ||
+      looksLikeNamedAmountSpeech(cleanText, normalized);
+    const tracker = liveHandTrackerRef.current;
+    let handStartedThisLine = false;
+
+    if (
+      activeHandRef.current &&
+      tracker.readyToAutoClose &&
+      (street === "preflop" || isBlindSetupCue || looksLikeButtonSyncSpeech(normalized)) &&
+      command === "none"
+    ) {
+      clearAutomaticNextHandStartTimeout();
+      appendSessionTranscriptLine("Sistema: nova mao identificada antes do intervalo automatico");
+      startNewHand(cleanText || "nova mao detectada automaticamente");
+      return {
+        handStartedThisLine: activeHandRef.current !== null,
+        street,
+        action,
+        playerCountHint,
+      };
+    }
+
+    if (
+      !activeHandRef.current &&
+      liveSessionStatusRef.current === "running" &&
+      command === "none" &&
+      isUsefulProgressSignal
+    ) {
+      clearAutomaticNextHandStartTimeout();
+      appendSessionTranscriptLine("Sistema: mao iniciada automaticamente pela transcricao");
+      startNewHand(cleanText || "mao detectada automaticamente");
+      handStartedThisLine = activeHandRef.current !== null;
+    }
+
+    if (activeHandRef.current && isUsefulProgressSignal) {
+      tracker.lastUsefulTranscriptAt = Date.now();
+    }
+
+    if (activeHandRef.current && street !== null) {
+      tracker.lastStreet = street;
+      tracker.lastPlayerCountHint = playerCountHint;
+
+      if (street === "showdown") {
+        appendSessionTranscriptLine("Sistema: showdown detectado, encerrando a mao atual");
+        if (typeof window !== "undefined") {
+          window.setTimeout(() => {
+            void finalizeCurrentHand("showdown detectado automaticamente");
+          }, 0);
+        } else {
+          void finalizeCurrentHand("showdown detectado automaticamente");
+        }
+      } else {
+        tracker.readyToAutoClose = false;
+        clearAutomaticHandFinalizeTimeout();
+      }
+    }
+
+    return {
+      handStartedThisLine,
+      street,
+      action,
+      playerCountHint,
+    };
+  }
+
   function appendSessionTranscriptLine(content: string) {
     sessionTranscriptLinesRef.current = [
       ...sessionTranscriptLinesRef.current,
@@ -2321,12 +2553,9 @@ export function LiveLabPage({
     const { restartBoardMonitor = true } = options;
 
     if (isRemoteMonitor) {
-      setRemoteBridgeStatus("Enviando comando para encerrar a sessao continua...");
-      await sendLiveRemoteMessage({
-        type: "command",
-        fromId: getOrCreateIntegratedDeviceId(),
-        command: "stop-session",
-      });
+      setRemoteBridgeStatus(
+        "Este aparelho esta em modo monitor. Finalize a sessao continua no aparelho que transmite.",
+      );
       return;
     }
 
@@ -2335,6 +2564,7 @@ export function LiveLabPage({
     setHasFinishedSession(true);
     commandLoopIdRef.current += 1;
     stopCommandRecognition();
+    resetLiveHandTracker();
     setCommandEngineLabel("Sessao parada");
     stopBoardMonitor();
 
@@ -2344,7 +2574,10 @@ export function LiveLabPage({
     sessionRecorderRef.current = null;
 
     if (activeHandRef.current) {
-      await finalizeCurrentHand("sessao encerrada");
+      await finalizeCurrentHand("sessao encerrada", {
+        allowRecentSave: false,
+        scheduleNextHand: false,
+      });
     }
 
     await persistCurrentSessionTranscript();
@@ -2436,6 +2669,20 @@ export function LiveLabPage({
       normalized,
       cleanText,
     });
+    let handStartedThisLine = false;
+
+    if (command === "start" && !activeHandRef.current) {
+      appendSessionTranscriptLine("Sistema: comando de voz detectado para iniciar partida");
+      startNewHand(cleanText || "nova partida");
+      handStartedThisLine = activeHandRef.current !== null;
+    } else {
+      const automaticLifecycle = handleAutomaticLiveHandLifecycle({
+        cleanText,
+        normalized,
+        command,
+      });
+      handStartedThisLine = automaticLifecycle.handStartedThisLine;
+    }
 
     if (cleanText && shouldPersistLine) {
       appendSessionTranscriptLine(`${source === "browser" ? "Navegador" : "Whisper"}: ${cleanText}`);
@@ -2453,14 +2700,8 @@ export function LiveLabPage({
       ].slice(0, 24));
     }
 
-    if (activeHandRef.current && cleanText && shouldPersistLine) {
+    if (activeHandRef.current && cleanText && shouldPersistLine && !handStartedThisLine) {
       activeHandRef.current.transcriptLog.push(cleanText);
-    }
-
-    if (command === "start" && !activeHandRef.current) {
-      appendSessionTranscriptLine("Sistema: comando de voz detectado para iniciar partida");
-      startNewHand(cleanText || "nova partida");
-      return;
     }
 
     if (command === "end" && activeHandRef.current) {
@@ -2469,9 +2710,23 @@ export function LiveLabPage({
       return;
     }
 
-    if (command === "save" && activeHandRef.current) {
-      activeHandRef.current.markedForSave = true;
-      appendSessionTranscriptLine("Sistema: mao marcada para salvar");
+    if (command === "save") {
+      const recentCompletedHand = recentCompletedHandRef.current;
+
+      if (
+        recentCompletedHand &&
+        Date.now() - new Date(recentCompletedHand.endedAt).getTime() <=
+          RECENT_COMPLETED_HAND_SAVE_WINDOW_MS
+      ) {
+        appendSessionTranscriptLine("Sistema: comando de voz detectado para salvar a mao anterior");
+        void persistCompletedHand(recentCompletedHand);
+        return;
+      }
+
+      if (activeHandRef.current) {
+        activeHandRef.current.markedForSave = true;
+        appendSessionTranscriptLine("Sistema: mao atual marcada para salvar");
+      }
     }
   }
 
@@ -2480,6 +2735,9 @@ export function LiveLabPage({
       setTranscriptError("O preview precisa estar ativo para iniciar uma nova partida.");
       return;
     }
+
+    clearAutomaticNextHandStartTimeout();
+    resetLiveHandTracker();
 
     const mimeType = getPreferredMimeType() || "video/webm";
     const recorder = mimeType
@@ -2510,11 +2768,22 @@ export function LiveLabPage({
 
     recorder.start(1000);
     activeHandRef.current = handSession;
+    liveHandTrackerRef.current.lastUsefulTranscriptAt = Date.now();
     setActiveHandTitle(title);
     setActiveHandStartedAtIso(new Date().toISOString());
   }
 
-  async function finalizeCurrentHand(triggerText: string) {
+  async function finalizeCurrentHand(
+    triggerText: string,
+    options: {
+      allowRecentSave?: boolean;
+      scheduleNextHand?: boolean;
+    } = {},
+  ) {
+    const {
+      allowRecentSave = true,
+      scheduleNextHand = liveSessionStatusRef.current === "running",
+    } = options;
     const currentHand = activeHandRef.current;
 
     if (!currentHand || isFinalizingHandRef.current) {
@@ -2524,6 +2793,8 @@ export function LiveLabPage({
     isFinalizingHandRef.current = true;
 
     try {
+      clearAutomaticHandFinalizeTimeout();
+      liveHandTrackerRef.current.readyToAutoClose = false;
       activeHandRef.current = null;
       setActiveHandTitle("");
       setActiveHandStartedAtIso("");
@@ -2542,30 +2813,50 @@ export function LiveLabPage({
       });
 
       const blob = new Blob(currentHand.chunks, { type: currentHand.mimeType });
+      const completedHand: CompletedHandSession = {
+        id: currentHand.id,
+        title: currentHand.title,
+        startedAt: new Date(currentHand.startedAt).toISOString(),
+        endedAt: new Date(endedAt).toISOString(),
+        durationSeconds: Math.max(1, Math.round((endedAt - currentHand.startedAt) / 1000)),
+        sizeBytes: blob.size,
+        mimeType: currentHand.mimeType,
+        startTrigger: currentHand.startTrigger,
+        endTrigger: triggerText,
+        transcriptLog: [...currentHand.transcriptLog, triggerText],
+        linkedStageId: linkedStageContext?.stageId ?? linkedStageOption?.stageId ?? null,
+        linkedStageTitle:
+          linkedStageContext?.stageTitle ?? linkedStageOption?.stageTitle ?? null,
+        linkedMatchLabel,
+        linkedBlindLabel: linkedStageContext?.currentBlindLabel ?? null,
+        blob,
+        saved: false,
+      };
 
       if (currentHand.markedForSave) {
-        await saveHandClip({
-          title: currentHand.title,
-          startedAt: new Date(currentHand.startedAt).toISOString(),
-          endedAt: new Date(endedAt).toISOString(),
-          durationSeconds: Math.max(1, Math.round((endedAt - currentHand.startedAt) / 1000)),
-          sizeBytes: blob.size,
-          mimeType: currentHand.mimeType,
-          startTrigger: currentHand.startTrigger,
-          endTrigger: triggerText,
-          transcriptLog: [...currentHand.transcriptLog, triggerText],
-          linkedStageId: linkedStageContext?.stageId ?? linkedStageOption?.stageId ?? null,
-          linkedStageTitle:
-            linkedStageContext?.stageTitle ?? linkedStageOption?.stageTitle ?? null,
-          linkedMatchLabel,
-          linkedBlindLabel: linkedStageContext?.currentBlindLabel ?? null,
-          blob,
-        });
-
-        await refreshSavedVideos();
+        await persistCompletedHand(completedHand);
+        appendSessionTranscriptLine("Sistema: mao finalizada e salva automaticamente");
+      } else if (allowRecentSave) {
+        recentCompletedHandRef.current = completedHand;
+        appendSessionTranscriptLine(
+          `Sistema: mao finalizada e aguardando comando de salvar por ate ${Math.round(RECENT_COMPLETED_HAND_SAVE_WINDOW_MS / 1000)} segundos`,
+        );
+      } else {
+        recentCompletedHandRef.current = null;
       }
 
       handCounterRef.current += 1;
+      if (allowRecentSave && typeof window !== "undefined") {
+        window.setTimeout(() => {
+          if (recentCompletedHandRef.current?.id === completedHand.id && !completedHand.saved) {
+            recentCompletedHandRef.current = null;
+          }
+        }, RECENT_COMPLETED_HAND_SAVE_WINDOW_MS);
+      }
+      resetLiveHandTracker();
+      if (scheduleNextHand) {
+        scheduleAutomaticNextHandStart();
+      }
     } finally {
       isFinalizingHandRef.current = false;
     }
@@ -3924,13 +4215,16 @@ export function LiveLabPage({
     const now = Date.now();
     const recent = recentTranscriptSignaturesRef.current.filter((entry) => now - entry.at < 8000);
     recentTranscriptSignaturesRef.current = recent;
+    const isFastActionSpeech = looksLikeFastActionSpeech(normalized);
+    const exactDuplicateWindowMs = isFastActionSpeech ? 1200 : 8000;
 
     const duplicate = recent.some((entry) => {
-      if (entry.key === normalized) {
+      if (entry.key === normalized && now - entry.at < exactDuplicateWindowMs) {
         return true;
       }
 
       if (
+        !isFastActionSpeech &&
         normalized.length >= 12 &&
         (entry.key.includes(normalized) || normalized.includes(entry.key))
       ) {
@@ -3994,7 +4288,7 @@ export function LiveLabPage({
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(255,190,65,0.16),transparent_26%),radial-gradient(circle_at_bottom_right,rgba(255,190,65,0.18),transparent_24%),linear-gradient(180deg,#05140d_0%,#07160f_100%)] text-[rgba(255,247,224,0.96)]">
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 pb-8 pt-24 md:px-6 lg:px-8">
+      <div className="mx-auto flex w-full min-w-0 max-w-full flex-col gap-6 px-2 pb-8 pt-24 sm:px-3 md:px-4 lg:px-6">
         <section className="rounded-[2rem] border border-[rgba(255,208,101,0.18)] bg-[linear-gradient(180deg,rgba(10,39,28,0.96),rgba(7,22,15,0.98))] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
@@ -4149,7 +4443,7 @@ export function LiveLabPage({
               </div>
             </div>
           </section>
-        ) : activeView === "capture" ? (
+        ) : activeView === "capture" || isIntegratedFullView ? (
         <section className="rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -4161,33 +4455,35 @@ export function LiveLabPage({
                 </h2>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <ActionButton
-                  disabled={liveSessionStatus === "running"}
-                  label={liveSessionStatus === "paused" ? "Retomar sessao continua" : "Iniciar sessao continua"}
-                  onClick={() => void startLiveSession()}
-                  tone="accent"
-                />
-                <ActionButton
-                  disabled={liveSessionStatus === "idle"}
-                  label={liveSessionStatus === "paused" ? "Retomar sessao continua" : "Pausar sessao continua"}
-                  onClick={() => {
-                    if (liveSessionStatus === "paused") {
-                      void startLiveSession();
-                      return;
-                    }
+              {showCaptureSessionControls ? (
+                <div className="flex flex-wrap gap-3">
+                  <ActionButton
+                    disabled={liveSessionStatus === "running"}
+                    label={liveSessionStatus === "paused" ? "Retomar sessao continua" : "Iniciar sessao continua"}
+                    onClick={() => void startLiveSession()}
+                    tone="accent"
+                  />
+                  <ActionButton
+                    disabled={liveSessionStatus === "idle"}
+                    label={liveSessionStatus === "paused" ? "Retomar sessao continua" : "Pausar sessao continua"}
+                    onClick={() => {
+                      if (liveSessionStatus === "paused") {
+                        void startLiveSession();
+                        return;
+                      }
 
-                    pauseLiveSession();
-                  }}
-                  tone="muted"
-                />
-                <ActionButton
-                  disabled={liveSessionStatus === "idle"}
-                  label="Finalizar sessao continua"
-                  onClick={() => void stopLiveSession()}
-                  tone="muted"
-                />
-              </div>
+                      pauseLiveSession();
+                    }}
+                    tone="muted"
+                  />
+                  <ActionButton
+                    disabled={liveSessionStatus === "idle"}
+                    label="Finalizar sessao continua"
+                    onClick={() => void stopLiveSession()}
+                    tone="muted"
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-5 overflow-hidden rounded-[1.6rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(2,10,7,0.95)]">
@@ -4245,29 +4541,24 @@ export function LiveLabPage({
                 onClick={stopStream}
                 tone="muted"
               />
-              {isIntegratedTransmitView ? (
-                <ActionButton
-                  label="Administrar neste aparelho"
-                  onClick={() => {
-                    handleSelectFullMode();
-                    onRequestModeChange?.("full");
-                  }}
-                  tone="muted"
-                />
-              ) : null}
             </div>
 
             {integratedMode ? (
               <div className="mt-4 rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] p-4">
-                <div className="grid gap-4 md:grid-cols-4">
-                  <MetricCard label="Etapa vinculada" value={linkedStageTitle} />
-                  <MetricCard label="Partida ativa" value={linkedMatchLabel} />
-                  <MetricCard label="Blind atual" value={linkedBlindLabel} />
-                  <MetricCard
-                    label="Modo"
-                    value={isIntegratedTransmitView ? "Fonte de captura" : "Operacao integrada"}
-                  />
-                </div>
+                {isIntegratedTransmitView ? (
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <MetricCard label="Preview" value={captureStatusLabel} />
+                    <MetricCard label="Sessao" value={liveSessionStatusLabel} />
+                    <MetricCard label="Modo" value="Fonte de captura" />
+                  </div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <MetricCard label="Etapa vinculada" value={linkedStageTitle} />
+                    <MetricCard label="Partida ativa" value={linkedMatchLabel} />
+                    <MetricCard label="Blind atual" value={linkedBlindLabel} />
+                    <MetricCard label="Modo" value="Operacao integrada" />
+                  </div>
+                )}
 
                 <p className="mt-4 rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(4,17,12,0.62)] px-4 py-3 text-sm text-[rgba(237,226,197,0.76)]">
                   Ponte remota: {remoteBridgeStatus}
@@ -4275,7 +4566,7 @@ export function LiveLabPage({
               </div>
             ) : null}
 
-            {(!integratedMode || isIntegratedTransmitView) ? (
+            {(!integratedMode || isIntegratedTransmitView || isIntegratedFullView) ? (
               <div className="mt-4 rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] p-4">
                 <p className="text-[0.72rem] uppercase tracking-[0.2em] text-[rgba(240,227,189,0.48)]">
                   Dispositivos da captura
@@ -4349,7 +4640,7 @@ export function LiveLabPage({
           </section>
         ) : null}
 
-        {activeView === "admin" ? (
+        {activeView === "admin" || isIntegratedFullView ? (
           <section className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
             <div className="grid gap-6">
               <section className="rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
@@ -4364,60 +4655,50 @@ export function LiveLabPage({
                   </div>
 
                   <div className="flex flex-wrap gap-3">
-                    <ActionButton
-                      disabled={liveSessionStatus === "running"}
-                      label={liveSessionStatus === "paused" ? "Retomar sessao continua" : "Iniciar sessao continua"}
-                      onClick={() => void startLiveSession()}
-                      tone="accent"
-                    />
-                    <ActionButton
-                      disabled={liveSessionStatus === "idle"}
-                      label={liveSessionStatus === "paused" ? "Retomar sessao continua" : "Pausar sessao continua"}
-                      onClick={() => {
-                        if (liveSessionStatus === "paused") {
-                          void startLiveSession();
-                          return;
-                        }
+                    {showAdminSessionControls ? (
+                      <>
+                        <ActionButton
+                          disabled={liveSessionStatus === "running"}
+                          label={liveSessionStatus === "paused" ? "Retomar sessao continua" : "Iniciar sessao continua"}
+                          onClick={() => void startLiveSession()}
+                          tone="accent"
+                        />
+                        <ActionButton
+                          disabled={liveSessionStatus === "idle"}
+                          label={liveSessionStatus === "paused" ? "Retomar sessao continua" : "Pausar sessao continua"}
+                          onClick={() => {
+                            if (liveSessionStatus === "paused") {
+                              void startLiveSession();
+                              return;
+                            }
 
-                        pauseLiveSession();
-                      }}
-                      tone="muted"
-                    />
-                    <ActionButton
-                      disabled={liveSessionStatus === "idle"}
-                      label="Finalizar sessao continua"
-                      onClick={() => void stopLiveSession()}
-                      tone="muted"
-                    />
-                    <ActionButton
-                      disabled={captureStatus === "preview"}
-                      label="Iniciar preview"
-                      onClick={() => void startPreview()}
-                      tone="accent"
-                    />
-                    <ActionButton
-                      disabled={captureStatus === "idle"}
-                      label="Parar preview"
-                      onClick={stopStream}
-                      tone="muted"
-                    />
-                    {integratedMode ? (
-                      <ActionButton
-                        label={
-                          isIntegratedFullView
-                            ? "Voltar para monitorar"
-                            : "Este aparelho tambem transmite"
-                        }
-                        onClick={
-                          isIntegratedFullView
-                            ? () => {
-                                handleSelectMonitorMode();
-                                onRequestModeChange?.("monitor");
-                              }
-                            : handleEnableLocalCaptureFromAdmin
-                        }
-                        tone={isIntegratedFullView ? "muted" : "accent"}
-                      />
+                            pauseLiveSession();
+                          }}
+                          tone="muted"
+                        />
+                        <ActionButton
+                          disabled={liveSessionStatus === "idle"}
+                          label="Finalizar sessao continua"
+                          onClick={() => void stopLiveSession()}
+                          tone="muted"
+                        />
+                      </>
+                    ) : null}
+                    {showAdminPreviewControls ? (
+                      <>
+                        <ActionButton
+                          disabled={captureStatus === "preview"}
+                          label="Iniciar preview"
+                          onClick={() => void startPreview()}
+                          tone="accent"
+                        />
+                        <ActionButton
+                          disabled={captureStatus === "idle"}
+                          label="Parar preview"
+                          onClick={stopStream}
+                          tone="muted"
+                        />
+                      </>
                     ) : null}
                   </div>
                 </div>
@@ -4474,37 +4755,66 @@ export function LiveLabPage({
 
               <section className="rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
                 <p className="text-[0.72rem] uppercase tracking-[0.24em] text-[rgba(240,227,189,0.5)]">
-                  Dispositivos
+                  {integratedMode && isIntegratedMonitorView ? "Monitoramento da sessao" : "Dispositivos"}
                 </p>
                 <h2 className="mt-2 text-2xl font-bold text-[rgba(255,239,192,0.96)]">
-                  Camera e audio da captura
+                  {integratedMode && isIntegratedMonitorView
+                    ? "Acompanhamento da mesa e da live"
+                    : "Camera e audio da captura"}
                 </h2>
 
                 <div className="mt-5 grid gap-4">
                   <div className="grid gap-4 md:grid-cols-3">
-                    <MetricCard
-                      label="Sessao continua"
-                      value={
-                        liveSessionStatus === "running"
-                          ? "Escutando comandos"
-                          : liveSessionStatus === "paused"
-                            ? "Pausada"
-                            : "Desligada"
-                      }
-                    />
-                    <MetricCard label="Mao aberta" value={activeHandTitle || "Nenhuma"} />
-                    <MetricCard
-                      label="Inicio da mao"
-                      value={activeHandStartedAtIso ? formatTimeOnly(activeHandStartedAtIso) : "--:--:--"}
-                    />
+                    {integratedMode && isIntegratedMonitorView ? (
+                      <>
+                        <MetricCard label="Etapa vinculada" value={linkedStageTitle} />
+                        <MetricCard label="Partida atual" value={linkedMatchLabel} />
+                        <MetricCard label="Blind atual" value={linkedBlindLabel} />
+                        <MetricCard label="Tempo do blind" value={linkedBlindTimerLabel} />
+                        <MetricCard label="Tempo de jogo" value={linkedMatchElapsedLabel} />
+                        <MetricCard label="Timer da mesa" value={linkedTimerStatusLabel} />
+                        <MetricCard label="Sessao atual" value={liveSessionStatusLabel} />
+                        <MetricCard
+                          label="Eventos detectados"
+                          value={transcriptFeed.length > 0 ? String(transcriptFeed.length) : "0"}
+                        />
+                        <MetricCard label="Ultimo comando" value={lastDetectedCommandLabel} />
+                      </>
+                    ) : (
+                      <>
+                        <MetricCard
+                          label="Sessao continua"
+                          value={
+                            liveSessionStatus === "running"
+                              ? "Escutando comandos"
+                              : liveSessionStatus === "paused"
+                                ? "Pausada"
+                                : "Desligada"
+                          }
+                        />
+                        <MetricCard label="Mao aberta" value={activeHandTitle || "Nenhuma"} />
+                        <MetricCard
+                          label="Inicio da mao"
+                          value={activeHandStartedAtIso ? formatTimeOnly(activeHandStartedAtIso) : "--:--:--"}
+                        />
+                      </>
+                    )}
                   </div>
 
-                  <p className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[rgba(237,226,197,0.76)]">
-                    Motor de comando: {commandEngineLabel}
-                  </p>
-
-                  {(!integratedMode || canPublishCapture) ? (
+                  {integratedMode && isIntegratedMonitorView ? (
+                    <div className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4 text-sm leading-7 text-[rgba(237,226,197,0.76)]">
+                      <p>Ponte remota: {remoteBridgeStatus}</p>
+                      <p className="mt-2">
+                        Este aparelho so monitora. O preview pode ser reiniciado daqui, mas a sessao
+                        continua deve ser iniciada, pausada e finalizada no aparelho que transmite.
+                      </p>
+                    </div>
+                  ) : (
                     <>
+                      <p className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[rgba(237,226,197,0.76)]">
+                        Motor de comando: {commandEngineLabel}
+                      </p>
+
                       <label className="grid gap-2">
                         <span className="text-sm font-semibold text-[rgba(255,239,192,0.92)]">
                           Camera
@@ -4556,13 +4866,9 @@ export function LiveLabPage({
                         />
                       </div>
                     </>
-                  ) : (
-                    <div className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4 text-sm leading-7 text-[rgba(237,226,197,0.72)]">
-                      Este aparelho esta em modo monitor. A camera e o microfone locais ficam em espera, e o preview aparece assim que a fonte de captura publicar o sinal remoto.
-                    </div>
                   )}
 
-                  {integratedMode ? (
+                  {integratedMode && !isIntegratedMonitorView ? (
                     <p className="rounded-[1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[rgba(237,226,197,0.76)]">
                       Ponte remota: {remoteBridgeStatus}
                     </p>
@@ -4931,7 +5237,7 @@ export function LiveLabPage({
           </section>
         ) : null}
 
-        {activeView === "admin" ? (
+        {activeView === "admin" || isIntegratedFullView ? (
           <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
             <div className="rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
               <p className="text-[0.72rem] uppercase tracking-[0.24em] text-[rgba(240,227,189,0.5)]">
@@ -4949,41 +5255,64 @@ export function LiveLabPage({
                     <strong> encerrar partida</strong> e <strong>salvar essa mao</strong>.
                   </div>
                 ) : (
-                  transcriptFeed.map((entry) => (
-                    <article
-                      key={entry.id}
-                      className="rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-xs uppercase tracking-[0.18em] text-[rgba(240,227,189,0.48)]">
-                          {formatTimeOnly(entry.at)}
-                        </span>
-                        <span
-                          className={`rounded-full px-3 py-1 text-[0.66rem] font-black uppercase tracking-[0.16em] ${
-                            entry.command === "start"
-                              ? "bg-[rgba(255,183,32,0.12)] text-[rgba(255,224,152,0.96)]"
+                  <>
+                    {visibleTranscriptFeed.map((entry) => (
+                      <article
+                        key={entry.id}
+                        className="rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-xs uppercase tracking-[0.18em] text-[rgba(240,227,189,0.48)]">
+                            {formatTimeOnly(entry.at)}
+                          </span>
+                          <span
+                            className={`rounded-full px-3 py-1 text-[0.66rem] font-black uppercase tracking-[0.16em] ${
+                              entry.command === "start"
+                                ? "bg-[rgba(255,183,32,0.12)] text-[rgba(255,224,152,0.96)]"
+                                : entry.command === "end"
+                                  ? "bg-[rgba(96,210,138,0.14)] text-[rgba(225,255,236,0.96)]"
+                                  : entry.command === "save"
+                                    ? "bg-[rgba(129,196,255,0.14)] text-[rgba(220,239,255,0.96)]"
+                                    : "bg-[rgba(255,255,255,0.06)] text-[rgba(237,226,197,0.72)]"
+                            }`}
+                          >
+                            {entry.command === "start"
+                              ? "Iniciou mao"
                               : entry.command === "end"
-                                ? "bg-[rgba(96,210,138,0.14)] text-[rgba(225,255,236,0.96)]"
+                                ? "Encerrou mao"
                                 : entry.command === "save"
-                                  ? "bg-[rgba(129,196,255,0.14)] text-[rgba(220,239,255,0.96)]"
-                                : "bg-[rgba(255,255,255,0.06)] text-[rgba(237,226,197,0.72)]"
-                          }`}
-                        >
-                          {entry.command === "start"
-                            ? "Iniciou mao"
-                            : entry.command === "end"
-                              ? "Encerrou mao"
-                              : entry.command === "save"
-                                ? "Salvar clip"
-                              : "Fala livre"}
-                        </span>
-                      </div>
+                                  ? "Salvar clip"
+                                  : "Fala livre"}
+                          </span>
+                        </div>
 
-                      <p className="mt-3 text-sm leading-7 text-[rgba(255,239,192,0.92)]">
-                        {entry.text}
-                      </p>
-                    </article>
-                  ))
+                        <p className="mt-3 text-sm leading-7 text-[rgba(255,239,192,0.92)]">
+                          {entry.text}
+                        </p>
+                      </article>
+                    ))}
+
+                    {integratedMode && isIntegratedMonitorView && hiddenTranscriptFeedCount > 0 ? (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <ActionButton
+                          label={
+                            isTranscriptFeedExpanded
+                              ? "Mostrar menos"
+                              : `Mostrar mais ${hiddenTranscriptFeedCount}`
+                          }
+                          onClick={() =>
+                            setIsTranscriptFeedExpanded((current) => !current)
+                          }
+                          tone="muted"
+                        />
+                        {!isTranscriptFeedExpanded ? (
+                          <span className="text-xs uppercase tracking-[0.16em] text-[rgba(240,227,189,0.48)]">
+                            Exibindo so os 3 comandos mais recentes
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
@@ -5036,7 +5365,7 @@ export function LiveLabPage({
           </section>
         ) : null}
 
-        {activeView === "admin" ? (
+        {activeView === "admin" || isIntegratedFullView ? (
           <section className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
             <div className="rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
               <div className="flex items-center justify-between gap-4">
@@ -5325,6 +5654,80 @@ function detectTranscriptCommand(text: string): CommandKind {
   return "none";
 }
 
+function detectLiveTranscriptStreet(normalizedText: string): LiveTranscriptStreet | null {
+  if (/\bshowdown\b/.test(normalizedText)) {
+    return "showdown";
+  }
+
+  if (/\briver\b/.test(normalizedText)) {
+    return "river";
+  }
+
+  if (/\bturn\b/.test(normalizedText)) {
+    return "turn";
+  }
+
+  if (/\bflop\b/.test(normalizedText)) {
+    return "flop";
+  }
+
+  if (/\bpreflop\b/.test(normalizedText)) {
+    return "preflop";
+  }
+
+  return null;
+}
+
+function detectLiveTranscriptAction(normalizedText: string): LiveTranscriptAction | null {
+  if (/\ball[\s-]?in\b|\ballin\b/.test(normalizedText)) {
+    return "all-in";
+  }
+
+  if (/\baumentou\b|\braise\b|\bre-raise\b|\bre raise\b|\bsubiu\b/.test(normalizedText)) {
+    return "raise";
+  }
+
+  if (/\bapostou\b|\baposta\b|\bbet\b/.test(normalizedText)) {
+    return "bet";
+  }
+
+  if (/\bpagou\b|\bcall\b|\bcobriu\b|\bacompanhou\b/.test(normalizedText)) {
+    return "call";
+  }
+
+  if (/\bcheck\b|\bmesa\b|\bpassou\b/.test(normalizedText)) {
+    return "check";
+  }
+
+  if (/\bfold\b|\blargou\b|\bdesistiu\b/.test(normalizedText)) {
+    return "fold";
+  }
+
+  if (looksLikeAmountOnlySpeech(normalizedText)) {
+    return "amount-only";
+  }
+
+  return null;
+}
+
+function extractStreetPlayerCountHintFromNormalized(
+  normalizedText: string,
+  street: LiveTranscriptStreet,
+) {
+  const match = normalizedText.match(
+    new RegExp(
+      `\\b${street}\\b(?:\\s+(?:para|pra|com))?\\s+(um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|\\d+)(?:\\s+jogadores?)?\\b`,
+      "i",
+    ),
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return parseTranscriptPlayerCountToken(match[1] ?? null);
+}
+
 function looksLikeTableSpeech(cleanText: string, normalized: string) {
   if (!normalized) {
     return false;
@@ -5338,8 +5741,16 @@ function looksLikeTableSpeech(cleanText: string, normalized: string) {
     return true;
   }
 
-  if (/\b(preflop|flop|turn|river|showdown|blind|blinds|small blind|big blind)\b/i.test(normalized)) {
+  if (looksLikeButtonSyncSpeech(normalized)) {
     return true;
+  }
+
+  if (/\b(preflop|flop|turn|river|showdown|blind|blinds|small blind|big blind|small|big)\b/i.test(normalized)) {
+    return true;
+  }
+
+  if (isLikelyQuestionUtterance(cleanText, normalized)) {
+    return false;
   }
 
   if (
@@ -5359,6 +5770,85 @@ function looksLikeTableSpeech(cleanText: string, normalized: string) {
   }
 
   return false;
+}
+
+function looksLikeButtonSyncSpeech(normalized: string) {
+  if (!/\b(botao|dealer)\b/i.test(normalized)) {
+    return false;
+  }
+
+  return (
+    /\blugar\s+\d+\b/i.test(normalized) ||
+    /\b(esta|ta|ficou)\s+(com|em|no)\b/i.test(normalized) ||
+    /\bposicao\b/i.test(normalized)
+  );
+}
+
+function isLikelyQuestionUtterance(cleanText: string, normalized: string) {
+  const hasActionKeyword =
+    /\b(check|mesa|passou|call|pagou|fold|largou|desistiu|apostou|aposta|bet|raise|aumentou|subiu|all[\s-]?in|allin)\b/i.test(
+      normalized,
+    );
+
+  if (!hasActionKeyword) {
+    return false;
+  }
+
+  if (/\?/.test(cleanText)) {
+    return true;
+  }
+
+  return /\b(sera|seria|vai|ou nao|ou não|ne|né|confirma)\b/i.test(normalized);
+}
+
+function looksLikeBlindSetupSpeech(normalized: string) {
+  return /\b(small blind|big blind|small|big|blind|blinds)\b/i.test(normalized);
+}
+
+function looksLikeFastActionSpeech(normalized: string) {
+  const compactText = normalized.trim();
+
+  if (compactText.length === 0 || compactText.length > 32) {
+    return false;
+  }
+
+  const tokens = compactText.split(" ").filter(Boolean);
+
+  if (tokens.length > 3) {
+    return false;
+  }
+
+  return /\b(check|mesa|passou|call|pagou|fold|largou|desistiu|all[\s-]?in|allin|small|big)\b/i.test(
+    compactText,
+  );
+}
+
+function parseTranscriptPlayerCountToken(token: string | null) {
+  if (!token) {
+    return null;
+  }
+
+  const normalizedToken = token.trim().toLowerCase();
+
+  if (/^\d+$/.test(normalizedToken)) {
+    const numericValue = Number.parseInt(normalizedToken, 10);
+    return Number.isFinite(numericValue) ? numericValue : null;
+  }
+
+  const tokenMap: Record<string, number> = {
+    um: 1,
+    uma: 1,
+    dois: 2,
+    duas: 2,
+    tres: 3,
+    quatro: 4,
+    cinco: 5,
+    seis: 6,
+    sete: 7,
+    oito: 8,
+  };
+
+  return tokenMap[normalizedToken] ?? null;
 }
 
 function looksLikeAmountOnlySpeech(normalized: string) {
@@ -5656,6 +6146,29 @@ function formatDuration(durationSeconds: number) {
     .padStart(2, "0");
 
   return `${minutes}:${seconds}`;
+}
+
+function formatElapsedClock(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600)
+    .toString()
+    .padStart(2, "0");
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+    .toString()
+    .padStart(2, "0");
+  const seconds = Math.floor(safeSeconds % 60)
+    .toString()
+    .padStart(2, "0");
+
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function summarizeMetricValue(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
 function formatBytes(sizeBytes: number) {

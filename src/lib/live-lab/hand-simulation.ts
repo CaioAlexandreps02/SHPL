@@ -34,6 +34,7 @@ export type ParsedHandEvent =
       kind: "street";
       street: SimulatedStreet;
       detail: string | null;
+      playerCountHint: number | null;
       revealedCards: string[];
       showdownHands: RevealedShowdownHand[];
       line: ParsedTranscriptLine;
@@ -51,6 +52,7 @@ export type ParsedTranscriptHand = {
   label: string;
   startLine: ParsedTranscriptLine;
   endLine: ParsedTranscriptLine | null;
+  declaredButtonSeatIndex: number | null;
   events: ParsedHandEvent[];
   rawLines: ParsedTranscriptLine[];
 };
@@ -145,50 +147,118 @@ export function parseTranscriptSession(record: TranscriptSessionRecord): ParsedT
   const hands: ParsedTranscriptHand[] = [];
   let currentHand: ParsedTranscriptHand | null = null;
   let handCounter = 1;
+  let currentHandReadyToClose = false;
+  let pendingButtonSeatIndex = configuration.buttonSeatIndex;
+
+  function openHand(startLine: ParsedTranscriptLine) {
+    const nextHand: ParsedTranscriptHand = {
+      id: `${record.id}-hand-${handCounter}`,
+      label: `Partida ${handCounter}`,
+      startLine,
+      endLine: null,
+      declaredButtonSeatIndex: pendingButtonSeatIndex,
+      events: [],
+      rawLines: [startLine],
+    };
+    currentHand = nextHand;
+    handCounter += 1;
+    currentHandReadyToClose = false;
+    return nextHand;
+  }
+
+  function closeCurrentHand(endLine: ParsedTranscriptLine | null = null) {
+    if (!currentHand) {
+      return;
+    }
+
+    if (endLine && !currentHand.endLine) {
+      currentHand.endLine = endLine;
+    }
+
+    hands.push(currentHand);
+    currentHand = null;
+    currentHandReadyToClose = false;
+  }
 
   for (const line of lines) {
     const isStart = isStartCommandLine(line);
     const isEnd = isEndCommandLine(line);
+    const buttonSeatIndexFromLine = extractButtonSeatIndexFromLine(
+      line,
+      configuration.seatAssignments,
+    );
+    const parsedEvent = parseTranscriptEvent(line);
+    const looksLikeNewHandCue = looksLikeNewHandStructureCue(line.normalizedContent);
+
+    if (buttonSeatIndexFromLine !== null) {
+      pendingButtonSeatIndex = buttonSeatIndexFromLine;
+      const mutableCurrentHand = currentHand as ParsedTranscriptHand | null;
+
+      if (mutableCurrentHand) {
+        mutableCurrentHand.declaredButtonSeatIndex = buttonSeatIndexFromLine;
+      }
+    }
 
     if (isStart) {
-      if (currentHand) {
-        hands.push(currentHand);
+      closeCurrentHand();
+      openHand(line);
+      continue;
+    }
+
+    if (currentHand && currentHandReadyToClose && looksLikeNewHandCue) {
+      closeCurrentHand();
+    }
+
+    if (isEnd) {
+      const currentHandForEnd = (currentHand as ParsedTranscriptHand | null) ?? openHand(line);
+
+      if (currentHandForEnd && currentHandForEnd.rawLines[currentHandForEnd.rawLines.length - 1]?.id !== line.id) {
+        currentHandForEnd.rawLines.push(line);
       }
 
-      currentHand = {
-        id: `${record.id}-hand-${handCounter}`,
-        label: `Partida ${handCounter}`,
-        startLine: line,
-        endLine: null,
-        events: [],
-        rawLines: [line],
-      };
-      handCounter += 1;
+      if (currentHandForEnd) {
+        currentHandForEnd.endLine = line;
+      }
+      closeCurrentHand(line);
       continue;
     }
 
     if (!currentHand) {
-      continue;
+      if (!parsedEvent) {
+        continue;
+      }
+
+      openHand(line);
+    } else {
+      const currentOpenHand = currentHand as ParsedTranscriptHand | null;
+
+      if (currentOpenHand && currentOpenHand.rawLines[currentOpenHand.rawLines.length - 1]?.id !== line.id) {
+        currentOpenHand.rawLines.push(line);
+      }
     }
-
-    currentHand.rawLines.push(line);
-
-    if (isEnd) {
-      currentHand.endLine = line;
-      hands.push(currentHand);
-      currentHand = null;
-      continue;
-    }
-
-    const parsedEvent = parseTranscriptEvent(line);
 
     if (parsedEvent) {
-      currentHand.events.push(parsedEvent);
+      const currentParsedHand = (currentHand as ParsedTranscriptHand | null) ?? openHand(line);
+
+      if (
+        parsedEvent.kind === "street" &&
+        currentParsedHand.events.length > 0 &&
+        currentHandReadyToClose &&
+        (parsedEvent.street === "preflop" || parsedEvent.street === "flop")
+      ) {
+        closeCurrentHand();
+        openHand(line);
+      }
+
+      const currentEventHand = (currentHand as ParsedTranscriptHand | null) ?? openHand(line);
+
+      currentEventHand.events.push(parsedEvent);
+      currentHandReadyToClose = parsedEvent.kind === "street" && parsedEvent.street === "showdown";
     }
   }
 
   if (currentHand) {
-    hands.push(currentHand);
+    closeCurrentHand();
   }
 
   return {
@@ -214,7 +284,8 @@ export function simulateTranscriptHand(
     .filter((seat) => Boolean(seat.playerName))
     .map((seat) => seat.seatIndex)
     .sort((left, right) => left - right);
-  const effectiveButtonSeatIndex = rotateButtonSeat(buttonSeatIndex, occupiedSeatIndexes, handOffset);
+  const effectiveButtonSeatIndex =
+    hand.declaredButtonSeatIndex ?? rotateButtonSeat(buttonSeatIndex, occupiedSeatIndexes, handOffset);
   const positionsBySeatIndex = buildPositionsBySeatIndex(occupiedSeatIndexes, effectiveButtonSeatIndex);
 
   const sections = createStreetSections();
@@ -232,8 +303,66 @@ export function simulateTranscriptHand(
 
   for (const event of hand.events) {
     if (event.kind === "street") {
+      if (event.street !== currentStreet && pendingSeatIndexes.length > 0) {
+        const inferredChecks = inferMissingChecksBeforeStreetAdvance({
+          activeSeatIndexes,
+          currentStreet,
+          nextStreet: event.street,
+          pendingSeatIndexes,
+          positionsBySeatIndex,
+          seatMap,
+          existingActions: sections[currentStreet].actions,
+          line: event.line,
+        });
+
+        if (inferredChecks.length > 0) {
+          sections[currentStreet].actions.push(...inferredChecks);
+          sections[currentStreet].announcements.push(
+            `Checks restantes inferidos automaticamente antes do ${STREET_LABELS[event.street]}.`,
+          );
+          pendingSeatIndexes = [];
+        } else {
+          reviewNotes.push(
+            `${STREET_LABELS[event.street]} anunciado antes de todas as acoes faladas em ${STREET_LABELS[currentStreet]}.`,
+          );
+        }
+      }
+
+      if (event.street !== currentStreet && event.playerCountHint !== null) {
+        const inferredFolds = inferMissingFoldsFromStreetPlayerCount({
+          activeSeatIndexes,
+          pendingSeatIndexes,
+          targetPlayerCount: event.playerCountHint,
+          currentStreet,
+          nextStreet: event.street,
+          positionsBySeatIndex,
+          seatMap,
+          line: event.line,
+        });
+
+        if (inferredFolds.inferredActions.length > 0) {
+          sections[currentStreet].actions.push(...inferredFolds.inferredActions);
+          reviewNotes.push(...inferredFolds.notes);
+          inferredFolds.removedSeatIndexes.forEach((seatIndex) => {
+            activeSeatIndexes = activeSeatIndexes.filter((value) => value !== seatIndex);
+            pendingSeatIndexes = pendingSeatIndexes.filter((value) => value !== seatIndex);
+            seatStates[seatIndex] = "folded";
+          });
+        } else if (event.playerCountHint > activeSeatIndexes.length) {
+          reviewNotes.push(
+            `${STREET_LABELS[event.street]} foi anunciado para ${event.playerCountHint} jogador(es), mas a mao estava sincronizada com apenas ${activeSeatIndexes.length}.`,
+          );
+        }
+      }
+
       sections[event.street].announcements.push(
-        event.detail?.trim() ? event.detail : `${STREET_LABELS[event.street]} anunciado por voz.`,
+        event.detail?.trim()
+          ? event.playerCountHint !== null
+            ? `${event.detail} (${event.playerCountHint} jogador(es) detectados)`
+            : event.detail
+          : event.playerCountHint !== null
+            ? `${STREET_LABELS[event.street]} anunciado por voz para ${event.playerCountHint} jogador(es).`
+            : `${STREET_LABELS[event.street]} anunciado por voz.`,
       );
       if (event.revealedCards.length > 0) {
         sections[event.street].revealedCards = mergeUniqueValues(
@@ -429,7 +558,9 @@ function extractSessionConfiguration(lines: ParsedTranscriptLine[]) {
       continue;
     }
 
-    const buttonSeatMatch = line.content.match(/^Botao(?: inicial)?(?: no| em)?\s+Lugar\s+(\d+)$/i);
+    const buttonSeatMatch = line.content.match(
+      /\b(?:Botao|Dealer)(?: inicial)?(?:\s+(?:ta|esta|ficou))?(?:\s+(?:no|em|com))?\s+Lugar\s+(\d+)\b/i,
+    );
 
     if (buttonSeatMatch) {
       const seatIndex = Number.parseInt(buttonSeatMatch[1] ?? "", 10) - 1;
@@ -441,7 +572,9 @@ function extractSessionConfiguration(lines: ParsedTranscriptLine[]) {
       continue;
     }
 
-    const buttonPlayerMatch = line.content.match(/^Botao(?: inicial)?(?: no| em)\s+(.+)$/i);
+    const buttonPlayerMatch = line.content.match(
+      /\b(?:Botao|Dealer)(?: inicial)?(?:\s+(?:ta|esta|ficou))?(?:\s+(?:no|em|com))\s+(.+)$/i,
+    );
 
     if (buttonPlayerMatch) {
       buttonPlayerName = buttonPlayerMatch[1]?.trim() ?? null;
@@ -481,6 +614,7 @@ function parseTranscriptEvent(line: ParsedTranscriptLine): ParsedHandEvent | nul
       kind: "street",
       street,
       detail: extractStreetDetail(line.content, street),
+      playerCountHint: extractStreetPlayerCountHint(line.normalizedContent, street),
       revealedCards: street === "showdown" ? [] : extractCardsFromSpeech(line.content),
       showdownHands: street === "showdown" ? extractShowdownHands(line.content) : [],
       line,
@@ -489,7 +623,7 @@ function parseTranscriptEvent(line: ParsedTranscriptLine): ParsedHandEvent | nul
 
   const action = detectAction(line.normalizedContent);
 
-  if (action) {
+  if (action && !isLikelyQuestionUtterance(line.content, line.normalizedContent)) {
     return {
       id: `${line.id}-${action}`,
       kind: "action",
@@ -517,7 +651,7 @@ function parseTranscriptEvent(line: ParsedTranscriptLine): ParsedHandEvent | nul
 function isStartCommandLine(line: ParsedTranscriptLine) {
   return (
     line.source === "Sistema" &&
-    /comando de voz detectado para iniciar partida/.test(line.normalizedContent)
+    /(?:comando de voz detectado para iniciar partida|mao iniciada automaticamente|partida iniciada automaticamente)/.test(line.normalizedContent)
   ) || /(^|\s)(nova partida|iniciar partida|comecar partida|abrir partida|nova mao|iniciar mao)(\s|$)/.test(line.normalizedContent);
 }
 
@@ -552,6 +686,22 @@ function detectStreet(normalizedText: string): SimulatedStreet | null {
   return null;
 }
 
+function extractStreetPlayerCountHint(normalizedText: string, street: SimulatedStreet) {
+  const streetLabel = street === "preflop" ? "preflop" : street;
+  const match = normalizedText.match(
+    new RegExp(
+      `\\b${streetLabel}\\b(?:\\s+(?:para|pra|com))?\\s+(um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|\\d+)(?:\\s+jogadores?)?\\b`,
+      "i",
+    ),
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return parsePlayerCountToken(match[1] ?? null);
+}
+
 function detectAction(normalizedText: string): ParsedHandActionKind | null {
   if (/\ball[\s-]?in\b|\ballin\b/.test(normalizedText)) {
     return "all-in";
@@ -578,6 +728,22 @@ function detectAction(normalizedText: string): ParsedHandActionKind | null {
   }
 
   return null;
+}
+
+function isLikelyQuestionUtterance(text: string, normalizedText: string) {
+  const hasActionKeyword = /\b(check|mesa|passou|call|pagou|fold|largou|desistiu|apostou|aposta|bet|raise|aumentou|subiu|all[\s-]?in|allin)\b/.test(
+    normalizedText,
+  );
+
+  if (!hasActionKeyword) {
+    return false;
+  }
+
+  if (/\?/.test(text)) {
+    return true;
+  }
+
+  return /\b(sera|seria|vai|ou nao|ou nao|ne|né|confirma)\b/.test(normalizedText);
 }
 
 function extractAmount(text: string) {
@@ -1026,6 +1192,141 @@ function buildStreetOrder(
   return buildCircularSeatOrder(startSeatIndex, activeSeatIndexes);
 }
 
+function inferMissingChecksBeforeStreetAdvance({
+  activeSeatIndexes,
+  currentStreet,
+  nextStreet,
+  pendingSeatIndexes,
+  positionsBySeatIndex,
+  seatMap,
+  existingActions,
+  line,
+}: {
+  activeSeatIndexes: number[];
+  currentStreet: SimulatedStreet;
+  nextStreet: SimulatedStreet;
+  pendingSeatIndexes: number[];
+  positionsBySeatIndex: Partial<Record<number, SimulationSeatPosition>>;
+  seatMap: Map<number, SimulationSeatAssignment>;
+  existingActions: SimulatedAction[];
+  line: ParsedTranscriptLine;
+}) {
+  if (
+    pendingSeatIndexes.length === 0 ||
+    currentStreet === "showdown" ||
+    activeSeatIndexes.length <= 1
+  ) {
+    return [];
+  }
+
+  const isNaturalAdvance = getNextStreet(currentStreet) === nextStreet || nextStreet === "showdown";
+
+  if (!isNaturalAdvance) {
+    return [];
+  }
+
+  const canTreatAsCheckRound =
+    existingActions.length === 0 || existingActions.every((action) => action.action === "check");
+
+  if (!canTreatAsCheckRound) {
+    return [];
+  }
+
+  return pendingSeatIndexes.map<SimulatedAction>((seatIndex, index) => {
+    const assignedSeat = seatMap.get(seatIndex);
+
+    return {
+      id: `${line.id}-inferred-check-${seatIndex}-${index + 1}`,
+      street: currentStreet,
+      seatIndex,
+      playerId: assignedSeat?.playerId ?? null,
+      playerName: assignedSeat?.playerName ?? `Lugar ${seatIndex + 1}`,
+      positionLabel: positionsBySeatIndex[seatIndex] ?? null,
+      action: "check",
+      amount: null,
+      rawText: `Check inferido automaticamente antes do ${STREET_LABELS[nextStreet]}.`,
+      source: "Sistema",
+      timestampLabel: line.timestampLabel,
+      inference: "inferred-order",
+      notes: [
+        `${assignedSeat?.playerName ?? `Lugar ${seatIndex + 1}`} foi inferido como check porque ${STREET_LABELS[nextStreet]} foi anunciado antes da ultima fala.`,
+      ],
+    };
+  });
+}
+
+function inferMissingFoldsFromStreetPlayerCount({
+  activeSeatIndexes,
+  pendingSeatIndexes,
+  targetPlayerCount,
+  currentStreet,
+  nextStreet,
+  positionsBySeatIndex,
+  seatMap,
+  line,
+}: {
+  activeSeatIndexes: number[];
+  pendingSeatIndexes: number[];
+  targetPlayerCount: number;
+  currentStreet: SimulatedStreet;
+  nextStreet: SimulatedStreet;
+  positionsBySeatIndex: Partial<Record<number, SimulationSeatPosition>>;
+  seatMap: Map<number, SimulationSeatAssignment>;
+  line: ParsedTranscriptLine;
+}) {
+  if (targetPlayerCount <= 0 || activeSeatIndexes.length <= targetPlayerCount) {
+    return {
+      removedSeatIndexes: [] as number[],
+      inferredActions: [] as SimulatedAction[],
+      notes: [] as string[],
+    };
+  }
+
+  const seatsToRemoveCount = activeSeatIndexes.length - targetPlayerCount;
+  const candidateSeatIndexes = [
+    ...pendingSeatIndexes,
+    ...activeSeatIndexes.filter((seatIndex) => !pendingSeatIndexes.includes(seatIndex)),
+  ];
+  const uniqueCandidates = Array.from(new Set(candidateSeatIndexes));
+  const removedSeatIndexes = uniqueCandidates.slice(-seatsToRemoveCount);
+
+  if (removedSeatIndexes.length === 0) {
+    return {
+      removedSeatIndexes: [] as number[],
+      inferredActions: [] as SimulatedAction[],
+      notes: [] as string[],
+    };
+  }
+
+  return {
+    removedSeatIndexes,
+    inferredActions: removedSeatIndexes.map<SimulatedAction>((seatIndex, index) => {
+      const assignedSeat = seatMap.get(seatIndex);
+
+      return {
+        id: `${line.id}-inferred-fold-${seatIndex}-${index + 1}`,
+        street: currentStreet,
+        seatIndex,
+        playerId: assignedSeat?.playerId ?? null,
+        playerName: assignedSeat?.playerName ?? `Lugar ${seatIndex + 1}`,
+        positionLabel: positionsBySeatIndex[seatIndex] ?? null,
+        action: "fold",
+        amount: null,
+        rawText: `Fold inferido automaticamente antes do ${STREET_LABELS[nextStreet]} por contagem falada de jogadores.`,
+        source: "Sistema",
+        timestampLabel: line.timestampLabel,
+        inference: "inferred-order",
+        notes: [
+          `${assignedSeat?.playerName ?? `Lugar ${seatIndex + 1}`} foi inferido como fora da mao porque ${STREET_LABELS[nextStreet]} foi anunciado para ${targetPlayerCount} jogador(es).`,
+        ],
+      };
+    }),
+    notes: [
+      `${STREET_LABELS[nextStreet]} anunciado para ${targetPlayerCount} jogador(es); ${removedSeatIndexes.length} jogador(es) foram removidos da mao para ressincronizar a sequencia.`,
+    ],
+  };
+}
+
 function buildResponderOrder(actingSeatIndex: number, activeSeatIndexes: number[]) {
   if (activeSeatIndexes.length === 0) {
     return [];
@@ -1149,6 +1450,69 @@ function rotateButtonSeat(
   const nextIndex =
     (normalizedBaseIndex + Math.max(handOffset, 0)) % occupiedSeatIndexes.length;
   return occupiedSeatIndexes[nextIndex] ?? baseButtonSeatIndex;
+}
+
+function extractButtonSeatIndexFromLine(
+  line: ParsedTranscriptLine,
+  seatAssignments: SimulationSeatAssignment[] | null,
+) {
+  const buttonSeatMatch = line.content.match(
+    /\b(?:Botao|Dealer)(?: inicial)?(?:\s+(?:ta|esta|ficou))?(?:\s+(?:no|em|com))?\s+Lugar\s+(\d+)\b/i,
+  );
+
+  if (buttonSeatMatch) {
+    const seatIndex = Number.parseInt(buttonSeatMatch[1] ?? "", 10) - 1;
+    return seatIndex >= 0 && seatIndex < 8 ? seatIndex : null;
+  }
+
+  const buttonPlayerMatch = line.content.match(
+    /\b(?:Botao|Dealer)(?: inicial)?(?:\s+(?:ta|esta|ficou))?(?:\s+(?:no|em|com))\s+(.+)$/i,
+  );
+
+  if (!buttonPlayerMatch || !seatAssignments) {
+    return null;
+  }
+
+  const buttonPlayerName = buttonPlayerMatch[1]?.trim() ?? "";
+  const matchedSeat = seatAssignments.find(
+    (seat) => normalizeText(seat.playerName ?? "") === normalizeText(buttonPlayerName),
+  );
+
+  return matchedSeat?.seatIndex ?? null;
+}
+
+function looksLikeNewHandStructureCue(normalizedText: string) {
+  return /\b(preflop|blind|blinds|small blind|big blind|small|big|botao|dealer)\b/.test(
+    normalizedText,
+  );
+}
+
+function parsePlayerCountToken(token: string | null) {
+  if (!token) {
+    return null;
+  }
+
+  const normalizedToken = normalizeText(token);
+
+  if (/^\d+$/.test(normalizedToken)) {
+    const value = Number.parseInt(normalizedToken, 10);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const tokenMap: Record<string, number> = {
+    um: 1,
+    uma: 1,
+    dois: 2,
+    duas: 2,
+    tres: 3,
+    quatro: 4,
+    cinco: 5,
+    seis: 6,
+    sete: 7,
+    oito: 8,
+  };
+
+  return tokenMap[normalizedToken] ?? null;
 }
 
 function buildPositionsBySeatIndex(

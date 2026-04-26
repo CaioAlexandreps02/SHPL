@@ -4,7 +4,13 @@ import { SHPLHistoryPage } from "@/components/shpl-history-page";
 import { getCurrentUserAccess, isAdmin } from "@/lib/auth/access";
 import { getLeagueSnapshot } from "@/lib/data/repository";
 
-export default async function HistoricoPage() {
+type HistoricoPageProps = {
+  searchParams?: Promise<{
+    stage?: string;
+  }>;
+};
+
+export default async function HistoricoPage({ searchParams }: HistoricoPageProps) {
   const access = await getCurrentUserAccess();
 
   if (!isAdmin(access)) {
@@ -12,6 +18,12 @@ export default async function HistoricoPage() {
   }
 
   const snapshot = await getLeagueSnapshot();
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
 
-  return <SHPLHistoryPage snapshot={snapshot} />;
+  return (
+    <SHPLHistoryPage
+      initialStageId={resolvedSearchParams?.stage}
+      snapshot={snapshot}
+    />
+  );
 }

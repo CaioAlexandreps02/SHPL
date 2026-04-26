@@ -27,9 +27,14 @@ export default async function StagePage({ params }: StagePageProps) {
   const scheduledStages = [snapshot.currentStage, ...snapshot.upcomingStages];
   const selectedStage = scheduledStages.find((stage) => stage.id === stageId);
   const isFinishedStage = snapshot.history.some((stage) => stage.id === stageId);
+  const finishedStageDetail = snapshot.stageHistoryDetails.find((stage) => stage.stageId === stageId);
 
   if (isFinishedStage) {
-    redirect(`/shpl-2026/ranking?stage=${stageId}`);
+    redirect(
+      finishedStageDetail?.isTest
+        ? `/shpl-2026/historico?stage=${stageId}`
+        : `/shpl-2026/ranking?stage=${stageId}`
+    );
   }
 
   if (!selectedStage) {

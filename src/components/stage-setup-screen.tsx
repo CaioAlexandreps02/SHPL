@@ -79,6 +79,8 @@ export function StageSetupScreen({
   const [isClosingStage, setIsClosingStage] = useState(false);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [actionClockRemaining, setActionClockRemaining] = useState<number | null>(null);
+  const [manualAdjustmentMatchIndex, setManualAdjustmentMatchIndex] = useState(0);
+  const [manualPlacementDraft, setManualPlacementDraft] = useState<Record<string, string>>({});
   const [seatAssignments, setSeatAssignments] = useState<Array<string | null>>(
     Array.from({ length: TOTAL_TABLE_SEATS }, () => null)
   );
@@ -760,6 +762,14 @@ export function StageSetupScreen({
   const canCloseStage =
     !stageClosedAt && completedMatchDurations.length > 0 && !isRunning && currentMatchClosed;
 
+  useEffect(() => {
+    setManualAdjustmentMatchIndex((currentValue) => Math.min(currentValue, currentMatchIndex));
+  }, [currentMatchIndex]);
+
+  useEffect(() => {
+    setManualPlacementDraft(buildManualPlacementDraft(players, manualAdjustmentMatchIndex));
+  }, [manualAdjustmentMatchIndex, players]);
+
   const rankingRows = useMemo(
     () =>
       players
@@ -1350,6 +1360,89 @@ export function StageSetupScreen({
     announceTableMessage(`${selectedPlayer.playerName} saiu da etapa.`);
   }
 
+  function handleManualPlacementChange(playerId: string, nextValue: string) {
+    setManualPlacementDraft((currentDraft) => ({
+      ...currentDraft,
+      [playerId]: nextValue,
+    }));
+  }
+
+  function handleApplyManualMatchAdjustment() {
+    const rankedSelections = rankingRows
+      .map((player) => ({
+        playerId: player.playerId,
+        playerName: player.playerName,
+        rawValue: manualPlacementDraft[player.playerId] ?? "",
+      }))
+      .filter((player) => player.rawValue !== "");
+
+    if (rankedSelections.length === 0) {
+      setStageNotice("Defina pelo menos uma colocacao para aplicar o ajuste manual da partida.");
+      return;
+    }
+
+    const placementByPlayerId = new Map<string, number>();
+    const usedPlacements = new Set<number>();
+
+    for (const selection of rankedSelections) {
+      const parsedPlacement = Number.parseInt(selection.rawValue, 10);
+
+      if (!Number.isFinite(parsedPlacement) || parsedPlacement <= 0) {
+        setStageNotice(`A colocacao informada para ${selection.playerName} nao e valida.`);
+        return;
+      }
+
+      if (usedPlacements.has(parsedPlacement)) {
+        setStageNotice("As colocacoes da partida nao podem se repetir.");
+        return;
+      }
+
+      usedPlacements.add(parsedPlacement);
+      placementByPlayerId.set(selection.playerId, parsedPlacement);
+    }
+
+    const orderedPlacements = [...usedPlacements].sort((left, right) => left - right);
+
+    if (orderedPlacements.some((placement, index) => placement !== index + 1)) {
+      setStageNotice(
+        "As colocacoes precisam ser continuas, comecando em 1o lugar e seguindo sem pular posicoes."
+      );
+      return;
+    }
+
+    pushPlayerActionSnapshot();
+    setPlayers((currentPlayers) =>
+      currentPlayers.map((player) => {
+        const nextMatchPoints = [...player.matchPoints];
+        const placement = placementByPlayerId.get(player.playerId);
+        nextMatchPoints[manualAdjustmentMatchIndex] = placement
+          ? calculateMatchPoints(placement)
+          : 0;
+
+        return {
+          ...player,
+          matchPoints: nextMatchPoints,
+        };
+      })
+    );
+
+    const adjustmentSummary = [...placementByPlayerId.entries()]
+      .sort((left, right) => left[1] - right[1])
+      .map(([playerId, placement]) => {
+        const playerName =
+          rankingRows.find((player) => player.playerId === playerId)?.playerName ?? "Jogador";
+        return `${playerName}: ${placement}o lugar`;
+      })
+      .join(" | ");
+
+    setStageNotice(`Ajuste manual aplicado na ${manualAdjustmentMatchIndex + 1}a partida.`);
+    void appendStageLogEntries([
+      formatStageEventLogEntry(
+        `Ajuste manual aplicado na partida ${manualAdjustmentMatchIndex + 1}: ${adjustmentSummary}.`
+      ),
+    ]);
+  }
+
   function handleUndoLastAction() {
     setPlayerActionHistory((currentHistory) => {
       const previousSnapshot = currentHistory[currentHistory.length - 1];
@@ -1431,11 +1524,15 @@ export function StageSetupScreen({
       ]);
       setStageNotice(
         payload.isTestStage
-          ? "Etapa de teste encerrada sem impactar ranking, historico oficial ou pote anual."
+          ? "Etapa de teste encerrada sem impactar ranking nem pote anual. O resultado ficou salvo para consulta."
           : "Etapa encerrada com confirmacao administrativa."
       );
       window.localStorage.removeItem(buildStageRuntimeStorageKey(stage.id));
-      router.push(payload.isTestStage ? "/shpl-2026/etapas" : `/shpl-2026/ranking?stage=${stage.id}`);
+      router.push(
+        payload.isTestStage
+          ? `/shpl-2026/historico?stage=${stage.id}`
+          : `/shpl-2026/ranking?stage=${stage.id}`
+      );
       router.refresh();
     } catch (error) {
       setStageNotice(
@@ -1850,6 +1947,79 @@ export function StageSetupScreen({
                       />
                     </div>
                   </div>
+
+                  <div className="mt-4 rounded-[1.1rem] border border-[rgba(129,196,255,0.16)] bg-[rgba(129,196,255,0.06)] p-4">
+                    <div className="flex flex-col gap-3 border-b border-[rgba(129,196,255,0.12)] pb-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-[rgba(202,230,255,0.56)]">
+                          Correcao manual
+                        </p>
+                        <h4 className="mt-2 text-lg font-semibold text-[rgba(232,244,255,0.96)]">
+                          Ajustar colocacoes da partida
+                        </h4>
+                        <p className="mt-2 text-sm leading-6 text-[rgba(202,230,255,0.76)]">
+                          Use este bloco para corrigir uma partida ja registrada caso alguma eliminacao tenha sido esquecida na hora.
+                        </p>
+                      </div>
+
+                      <label className="grid gap-2">
+                        <span className="text-xs uppercase tracking-[0.18em] text-[rgba(202,230,255,0.56)]">
+                          Partida
+                        </span>
+                        <select
+                          className="h-11 rounded-[0.95rem] border border-[rgba(129,196,255,0.16)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(232,244,255,0.96)] outline-none"
+                          onChange={(event) =>
+                            setManualAdjustmentMatchIndex(Number.parseInt(event.target.value, 10) || 0)
+                          }
+                          value={String(manualAdjustmentMatchIndex)}
+                        >
+                          {players[0]?.matchPoints.map((_, matchIndex) => (
+                            <option key={`manual-match-${matchIndex}`} value={matchIndex}>
+                              {matchIndex + 1}a partida
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      {rankingRows.map((player) => (
+                        <label
+                          key={`manual-placement-${player.playerId}`}
+                          className="grid gap-2 rounded-[0.95rem] border border-[rgba(129,196,255,0.12)] bg-[rgba(255,255,255,0.02)] px-3 py-3"
+                        >
+                          <span className="text-sm font-semibold text-[rgba(232,244,255,0.96)]">
+                            {player.playerName}
+                          </span>
+                          <select
+                            className="h-11 rounded-[0.9rem] border border-[rgba(129,196,255,0.16)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(232,244,255,0.96)] outline-none"
+                            onChange={(event) =>
+                              handleManualPlacementChange(player.playerId, event.target.value)
+                            }
+                            value={manualPlacementDraft[player.playerId] ?? ""}
+                          >
+                            <option value="">Nao participou</option>
+                            {players.map((_, placementIndex) => {
+                              const placement = placementIndex + 1;
+                              return (
+                                <option key={`${player.playerId}-placement-${placement}`} value={placement}>
+                                  {buildPlacementLabel(placement)}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+
+                    <button
+                      className="mt-4 h-11 w-full rounded-[0.95rem] border border-[rgba(129,196,255,0.22)] bg-[rgba(129,196,255,0.12)] px-4 text-sm font-semibold text-[rgba(232,244,255,0.96)] transition hover:bg-[rgba(129,196,255,0.18)]"
+                      onClick={handleApplyManualMatchAdjustment}
+                      type="button"
+                    >
+                      Aplicar ajuste manual
+                    </button>
+                  </div>
                 </>
               ) : null}
             </div>
@@ -2248,6 +2418,38 @@ function calculateEstimatedAverageActiveStack({
   );
 
   return Math.round(baseAverage * (1 + totalBias));
+}
+
+function buildManualPlacementDraft(
+  players: StagePlayerControl[],
+  matchIndex: number
+) {
+  const draft = Object.fromEntries(players.map((player) => [player.playerId, ""]));
+
+  const rankedPlayers = [...players]
+    .map((player) => ({
+      playerId: player.playerId,
+      playerName: player.playerName,
+      points: player.matchPoints[matchIndex] ?? 0,
+    }))
+    .filter((player) => player.points > 0)
+    .sort((left, right) => {
+      if (right.points !== left.points) {
+        return right.points - left.points;
+      }
+
+      return left.playerName.localeCompare(right.playerName, "pt-BR");
+    });
+
+  rankedPlayers.forEach((player, index) => {
+    draft[player.playerId] = String(index + 1);
+  });
+
+  return draft;
+}
+
+function buildPlacementLabel(placement: number) {
+  return `${placement}o lugar`;
 }
 
 function buildSeatPlayerOptions(
