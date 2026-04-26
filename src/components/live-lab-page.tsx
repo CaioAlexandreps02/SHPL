@@ -417,6 +417,7 @@ export function LiveLabPage({
   const isIntegratedTransmitView = integratedMode && integratedEntryMode === "transmit";
   const isIntegratedMonitorView = integratedMode && integratedEntryMode === "monitor";
   const isIntegratedFullView = integratedMode && integratedEntryMode === "full";
+  const showAdminOverviewBlocks = activeView === "admin" && !isIntegratedFullView;
   const showCaptureSessionControls =
     !integratedMode || isIntegratedTransmitView || isIntegratedFullView;
   const showAdminSessionControls = !integratedMode || isIntegratedFullView;
@@ -668,6 +669,14 @@ export function LiveLabPage({
     return stream;
   }
 
+  function hasRemotePreviewMedia(stream: MediaStream | null) {
+    if (!stream) {
+      return false;
+    }
+
+    return stream.getVideoTracks().some((track) => track.readyState === "live");
+  }
+
   function closeRemotePeerConnection() {
     livePeerConnectionRef.current?.close();
     livePeerConnectionRef.current = null;
@@ -818,13 +827,14 @@ export function LiveLabPage({
     const peerConnection = new RTCPeerConnection(LIVE_REMOTE_ICE_CONFIGURATION);
     livePeerConnectionRef.current = peerConnection;
     remoteViewerIdRef.current = message.fromId;
-    const remoteStream = ensureRemoteMediaStream();
-    remoteStream.getTracks().forEach((track) => remoteStream.removeTrack(track));
+    if (remotePreviewStreamRef.current && !hasRemotePreviewMedia(remotePreviewStreamRef.current)) {
+      remotePreviewStreamRef.current = null;
+    }
 
     peerConnection.ontrack = (event) => {
       const [stream] = event.streams;
 
-      if (stream) {
+      if (stream && hasRemotePreviewMedia(stream)) {
         remotePreviewStreamRef.current = stream;
         clearRemotePreviewFrame();
         attachPreviewStream(stream);
@@ -834,7 +844,13 @@ export function LiveLabPage({
       }
 
       const nextRemoteStream = ensureRemoteMediaStream();
-      nextRemoteStream.addTrack(event.track);
+      const alreadyHasTrack = nextRemoteStream
+        .getTracks()
+        .some((track) => track.id === event.track.id);
+
+      if (!alreadyHasTrack) {
+        nextRemoteStream.addTrack(event.track);
+      }
       clearRemotePreviewFrame();
       attachPreviewStream(nextRemoteStream);
       setCaptureStatus("preview");
@@ -1268,7 +1284,7 @@ export function LiveLabPage({
           setRemotePreviewFrameUrl(payload.dataUrl);
           setCaptureStatus("preview");
 
-          if (!remotePreviewStreamRef.current) {
+          if (!hasRemotePreviewMedia(remotePreviewStreamRef.current)) {
             setRemoteBridgeStatus("Preview remoto ativo via sincronizacao de frames.");
           }
 
@@ -1875,22 +1891,6 @@ export function LiveLabPage({
           : "Sessao parada",
     [liveSessionStatus],
   );
-
-  const boardMonitorLabel = useMemo(() => {
-    if (!boardFeaturesEnabled) {
-      return "Standby";
-    }
-
-    if (boardMonitorStatus === "monitoring") {
-      return "Monitorando";
-    }
-
-    if (boardMonitorStatus === "loading") {
-      return "Carregando CV";
-    }
-
-    return "Parado";
-  }, [boardFeaturesEnabled, boardMonitorStatus]);
 
   const linkedMatchLabel = useMemo(() => {
     if (!linkedStageContext) {
@@ -4289,30 +4289,6 @@ export function LiveLabPage({
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(255,190,65,0.16),transparent_26%),radial-gradient(circle_at_bottom_right,rgba(255,190,65,0.18),transparent_24%),linear-gradient(180deg,#05140d_0%,#07160f_100%)] text-[rgba(255,247,224,0.96)]">
       <div className="mx-auto flex w-full min-w-0 max-w-full flex-col gap-6 px-2 pb-8 pt-24 sm:px-3 md:px-4 lg:px-6">
-        <section className="rounded-[2rem] border border-[rgba(255,208,101,0.18)] bg-[linear-gradient(180deg,rgba(10,39,28,0.96),rgba(7,22,15,0.98))] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-[0.72rem] uppercase tracking-[0.28em] text-[rgba(240,227,189,0.56)]">
-                {integratedMode ? "Modulo principal" : "Laboratorio separado"}
-              </p>
-              <h1 className="mt-3 text-4xl font-black tracking-[-0.03em] text-[rgba(255,239,192,0.98)] md:text-5xl">
-                {integratedMode ? "Transmissao ao vivo" : "Live Lab da Mesa"}
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-[rgba(237,226,197,0.72)] md:text-base">
-                {integratedMode
-                  ? "Este modulo agora faz parte do fluxo principal da SHPL para gravar a transmissao, transcrever a mesa, recortar apenas as maos marcadas para salvar e enviar os TXT direto para as estatisticas."
-                  : "Este modulo fica fora do fluxo principal da SHPL para testar camera do celular, audio da propria transmissao, cortes por mao e preparacao para a futura deteccao de flop, turn e river."}
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <MetricCard label="Status" value={captureStatusLabel} />
-              <MetricCard label="Sessao" value={liveSessionStatusLabel} />
-              <MetricCard label={integratedMode ? "Partida" : "Board"} value={integratedMode ? linkedMatchLabel : boardMonitorLabel} />
-            </div>
-          </div>
-        </section>
-
         {!integratedMode ? (
           <section className="grid gap-4 md:grid-cols-3">
             <SubmenuCard
@@ -4640,8 +4616,12 @@ export function LiveLabPage({
           </section>
         ) : null}
 
-        {activeView === "admin" || isIntegratedFullView ? (
-          <section className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+        {showAdminOverviewBlocks ? (
+          <section
+            className={`grid gap-6 ${
+              integratedMode && isIntegratedMonitorView ? "" : "xl:grid-cols-[1.08fr_0.92fr]"
+            }`}
+          >
             <div className="grid gap-6">
               <section className="rounded-[2rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(8,28,20,0.92)] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.32)]">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -4712,7 +4692,7 @@ export function LiveLabPage({
                       muted
                       playsInline
                     />
-                    {isRemoteMonitor && remotePreviewFrameUrl && !remotePreviewStreamRef.current ? (
+                    {isRemoteMonitor && remotePreviewFrameUrl && !hasRemotePreviewMedia(remotePreviewStreamRef.current) ? (
                       <NextImage
                         alt="Preview remoto da transmissao"
                         className="object-cover"
@@ -4764,16 +4744,23 @@ export function LiveLabPage({
                 </h2>
 
                 <div className="mt-5 grid gap-4">
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div
+                    className={`grid gap-4 ${
+                      integratedMode && isIntegratedMonitorView
+                        ? "md:grid-cols-2 xl:grid-cols-4"
+                        : "md:grid-cols-3"
+                    }`}
+                  >
                     {integratedMode && isIntegratedMonitorView ? (
                       <>
+                        <MetricCard label="Status do preview" value={captureStatusLabel} />
+                        <MetricCard label="Sessao atual" value={liveSessionStatusLabel} />
                         <MetricCard label="Etapa vinculada" value={linkedStageTitle} />
                         <MetricCard label="Partida atual" value={linkedMatchLabel} />
                         <MetricCard label="Blind atual" value={linkedBlindLabel} />
                         <MetricCard label="Tempo do blind" value={linkedBlindTimerLabel} />
                         <MetricCard label="Tempo de jogo" value={linkedMatchElapsedLabel} />
                         <MetricCard label="Timer da mesa" value={linkedTimerStatusLabel} />
-                        <MetricCard label="Sessao atual" value={liveSessionStatusLabel} />
                         <MetricCard
                           label="Eventos detectados"
                           value={transcriptFeed.length > 0 ? String(transcriptFeed.length) : "0"}

@@ -10,6 +10,7 @@ import type { AccessRole } from "@/lib/auth/roles";
 import { getVisibleShplNavItems, isShplNavItemActive } from "@/lib/navigation/shpl-nav";
 
 const DESKTOP_SIDEBAR_COLLAPSED_STORAGE_KEY = "shpl-desktop-sidebar-collapsed";
+const DESKTOP_SIDEBAR_COLLAPSED_EVENT = "shpl-desktop-sidebar-collapsed-change";
 
 export function SHPLSidebar({ roles }: { roles: AccessRole[] }) {
   const pathname = usePathname();
@@ -46,6 +47,14 @@ export function SHPLSidebar({ roles }: { roles: AccessRole[] }) {
     window.localStorage.setItem(
       DESKTOP_SIDEBAR_COLLAPSED_STORAGE_KEY,
       isDesktopCollapsed ? "true" : "false",
+    );
+    document.documentElement.dataset.shplDesktopSidebarCollapsed = isDesktopCollapsed
+      ? "true"
+      : "false";
+    window.dispatchEvent(
+      new CustomEvent(DESKTOP_SIDEBAR_COLLAPSED_EVENT, {
+        detail: { collapsed: isDesktopCollapsed },
+      }),
     );
   }, [hasHydratedDesktopSidebar, isDesktopCollapsed]);
 
@@ -168,13 +177,7 @@ export function SHPLSidebar({ roles }: { roles: AccessRole[] }) {
           isDesktopCollapsed ? "xl:w-[104px]" : "xl:w-[255px]"
         }`}
       >
-        <div
-          className={`px-2 py-3 ${
-            isDesktopCollapsed
-              ? "flex flex-col items-center gap-4"
-              : "flex items-start justify-between gap-3"
-          }`}
-        >
+        <div className="flex flex-col items-center gap-4 px-2 py-3">
           <Image
             alt="Logo oficial da SHPL"
             className={`h-auto ${isDesktopCollapsed ? "w-[58px]" : "mx-auto w-[122px]"}`}
