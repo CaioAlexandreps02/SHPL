@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { StageRankingHistoryModal } from "@/components/stage-ranking-history-modal";
 import type { LeagueSnapshot, StageStatus } from "@/lib/domain/types";
 
 type StageListEntry = {
@@ -41,6 +42,7 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
   const [stages, setStages] = useState<StageListEntry[]>(initialStages);
   const [draft, setDraft] = useState<StageDraft | null>(null);
   const [message, setMessage] = useState("");
+  const [selectedFinishedStageId, setSelectedFinishedStageId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,7 +65,7 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
 
   function handleOpenStage(stage: StageListEntry) {
     if (stage.status === "finished") {
-      router.push(`/shpl-2026/ranking?stage=${stage.id}`);
+      setSelectedFinishedStageId(stage.id);
       return;
     }
 
@@ -395,6 +397,12 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
           </div>
         </div>
       ) : null}
+
+      <StageRankingHistoryModal
+        onClose={() => setSelectedFinishedStageId(null)}
+        snapshot={snapshot}
+        stageId={selectedFinishedStageId}
+      />
     </section>
   );
 }

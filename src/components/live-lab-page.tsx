@@ -50,6 +50,16 @@ type MediaDeviceOption = {
   label: string;
 };
 
+type StoredDevicePreferences = {
+  boardRegion?: BoardRegion;
+  selectedVideoDeviceId?: string;
+  selectedVideoDeviceLabel?: string;
+  selectedAudioDeviceId?: string;
+  selectedAudioDeviceLabel?: string;
+  isAudioEnabled?: boolean;
+  isVideoEnabled?: boolean;
+};
+
 type BoardRegion = {
   x: number;
   y: number;
@@ -281,6 +291,62 @@ const LIVE_REMOTE_ICE_CONFIGURATION: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
+function normalizeDeviceLabel(label: string) {
+  return label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function detectFacingModeFromLabel(label: string) {
+  const normalized = normalizeDeviceLabel(label);
+
+  if (/\b(front|frontal|selfie|user)\b/.test(normalized)) {
+    return "user" as const;
+  }
+
+  if (/\b(back|rear|traseira|tras|environment)\b/.test(normalized)) {
+    return "environment" as const;
+  }
+
+  return null;
+}
+
+function resolvePreferredDeviceSelection({
+  devices,
+  selectedDeviceId,
+  preferredLabel,
+}: {
+  devices: MediaDeviceOption[];
+  selectedDeviceId: string;
+  preferredLabel: string;
+}) {
+  if (devices.length === 0) {
+    return "";
+  }
+
+  const exactMatch = devices.find((device) => device.deviceId === selectedDeviceId);
+
+  if (exactMatch) {
+    return exactMatch.deviceId;
+  }
+
+  const normalizedPreferredLabel = normalizeDeviceLabel(preferredLabel);
+
+  if (normalizedPreferredLabel) {
+    const labelMatch = devices.find(
+      (device) => normalizeDeviceLabel(device.label) === normalizedPreferredLabel,
+    );
+
+    if (labelMatch) {
+      return labelMatch.deviceId;
+    }
+  }
+
+  return devices[0]?.deviceId ?? "";
+}
+
 type LiveLabPageProps = {
   mode?: LiveLabMode;
   linkedStageOption?: LiveLinkedStageOption | null;
@@ -350,6 +416,8 @@ export function LiveLabPage({
   const hasAttemptedAutoPreviewRef = useRef(false);
   const hasHydratedSettingsRef = useRef(false);
   const startPreviewRef = useRef<null | (() => Promise<void>)>(null);
+  const preferredVideoDeviceLabelRef = useRef("");
+  const preferredAudioDeviceLabelRef = useRef("");
   const lastBoardSignatureRef = useRef<string>("");
   const lastBoardCardCountRef = useRef(0);
   const pendingLowerBoardDetectionRef = useRef<{ cardCount: number; streak: number } | null>(null);
@@ -1074,16 +1142,16 @@ export function LiveLabPage({
       setVideoDevices(nextVideoDevices);
       setAudioDevices(nextAudioDevices);
 
-      const nextVideoSelection = nextVideoDevices.some(
-        (device) => device.deviceId === selectedVideoDeviceId,
-      )
-        ? selectedVideoDeviceId
-        : (nextVideoDevices[0]?.deviceId ?? "");
-      const nextAudioSelection = nextAudioDevices.some(
-        (device) => device.deviceId === selectedAudioDeviceId,
-      )
-        ? selectedAudioDeviceId
-        : (nextAudioDevices[0]?.deviceId ?? "");
+      const nextVideoSelection = resolvePreferredDeviceSelection({
+        devices: nextVideoDevices,
+        selectedDeviceId: selectedVideoDeviceId,
+        preferredLabel: preferredVideoDeviceLabelRef.current,
+      });
+      const nextAudioSelection = resolvePreferredDeviceSelection({
+        devices: nextAudioDevices,
+        selectedDeviceId: selectedAudioDeviceId,
+        preferredLabel: preferredAudioDeviceLabelRef.current,
+      });
 
       if (nextVideoSelection !== selectedVideoDeviceId) {
         setSelectedVideoDeviceId(nextVideoSelection);
@@ -1091,6 +1159,16 @@ export function LiveLabPage({
 
       if (nextAudioSelection !== selectedAudioDeviceId) {
         setSelectedAudioDeviceId(nextAudioSelection);
+      }
+
+      if (!preferredVideoDeviceLabelRef.current && nextVideoSelection) {
+        preferredVideoDeviceLabelRef.current =
+          nextVideoDevices.find((device) => device.deviceId === nextVideoSelection)?.label ?? "";
+      }
+
+      if (!preferredAudioDeviceLabelRef.current && nextAudioSelection) {
+        preferredAudioDeviceLabelRef.current =
+          nextAudioDevices.find((device) => device.deviceId === nextAudioSelection)?.label ?? "";
       }
     } catch (loadError) {
       setError(
@@ -1155,13 +1233,7 @@ export function LiveLabPage({
     }
 
     try {
-      const parsed = JSON.parse(storedValue) as {
-        boardRegion?: BoardRegion;
-        selectedVideoDeviceId?: string;
-        selectedAudioDeviceId?: string;
-        isAudioEnabled?: boolean;
-        isVideoEnabled?: boolean;
-      };
+      const parsed = JSON.parse(storedValue) as StoredDevicePreferences;
 
       if (parsed.boardRegion && !hasStoredBoardRegion) {
         setBoardRegion(parsed.boardRegion);
@@ -1171,8 +1243,16 @@ export function LiveLabPage({
         setSelectedVideoDeviceId(parsed.selectedVideoDeviceId);
       }
 
+      if (parsed.selectedVideoDeviceLabel) {
+        preferredVideoDeviceLabelRef.current = parsed.selectedVideoDeviceLabel;
+      }
+
       if (parsed.selectedAudioDeviceId) {
         setSelectedAudioDeviceId(parsed.selectedAudioDeviceId);
+      }
+
+      if (parsed.selectedAudioDeviceLabel) {
+        preferredAudioDeviceLabelRef.current = parsed.selectedAudioDeviceLabel;
       }
 
       if (typeof parsed.isAudioEnabled === "boolean") {
@@ -1187,7 +1267,7 @@ export function LiveLabPage({
     } finally {
       hasHydratedSettingsRef.current = true;
     }
-  }, [boardFeaturesEnabled, integratedEntryMode, integratedMode, loadDevices]);
+  }, [boardFeaturesEnabled, integratedEntryMode, integratedMode]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !integratedMode) {
@@ -1405,10 +1485,6 @@ export function LiveLabPage({
   }, [canPublishCapture, captureStatus, integratedMode, previewSessionId, runRemotePreviewFrameLoop]);
 
   useEffect(() => {
-    if (!boardFeaturesEnabled) {
-      return;
-    }
-
     if (typeof window === "undefined") {
       return;
     }
@@ -1422,7 +1498,9 @@ export function LiveLabPage({
       JSON.stringify({
         boardRegion,
         selectedVideoDeviceId,
+        selectedVideoDeviceLabel: preferredVideoDeviceLabelRef.current,
         selectedAudioDeviceId,
+        selectedAudioDeviceLabel: preferredAudioDeviceLabelRef.current,
         isAudioEnabled,
         isVideoEnabled,
       }),
@@ -1443,6 +1521,49 @@ export function LiveLabPage({
   useEffect(() => {
     latestBoardDetectionRef.current = boardDetection;
   }, [boardDetection]);
+
+  const handleVideoDeviceSelection = useCallback((deviceId: string) => {
+    setSelectedVideoDeviceId(deviceId);
+    preferredVideoDeviceLabelRef.current =
+      videoDevices.find((device) => device.deviceId === deviceId)?.label ?? "";
+  }, [videoDevices]);
+
+  const handleAudioDeviceSelection = useCallback((deviceId: string) => {
+    setSelectedAudioDeviceId(deviceId);
+    preferredAudioDeviceLabelRef.current =
+      audioDevices.find((device) => device.deviceId === deviceId)?.label ?? "";
+  }, [audioDevices]);
+
+  function buildVideoConstraints() {
+    if (!isVideoEnabled) {
+      return false;
+    }
+
+    const selectedDevice = videoDevices.find((device) => device.deviceId === selectedVideoDeviceId);
+    const facingMode = detectFacingModeFromLabel(
+      selectedDevice?.label ?? preferredVideoDeviceLabelRef.current,
+    );
+
+    return {
+      deviceId: selectedVideoDeviceId ? { ideal: selectedVideoDeviceId } : undefined,
+      facingMode: facingMode ? { ideal: facingMode } : undefined,
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 30, max: 30 },
+    } satisfies MediaTrackConstraints;
+  }
+
+  function buildAudioConstraints() {
+    if (!isAudioEnabled) {
+      return false;
+    }
+
+    return {
+      deviceId: selectedAudioDeviceId ? { ideal: selectedAudioDeviceId } : undefined,
+      echoCancellation: true,
+      noiseSuppression: true,
+    } satisfies MediaTrackConstraints;
+  }
 
   useEffect(() => {
     if (!integratedMode) {
@@ -1569,6 +1690,35 @@ export function LiveLabPage({
     isRemoteMonitor,
     isVideoEnabled,
     videoDevices.length,
+  ]);
+
+  const lastAppliedCaptureDeviceSignatureRef = useRef("");
+
+  useEffect(() => {
+    if (!hasHydratedSettingsRef.current || isRemoteMonitor || captureStatus !== "preview") {
+      return;
+    }
+
+    const currentSignature = `${selectedVideoDeviceId}::${selectedAudioDeviceId}::${isVideoEnabled}::${isAudioEnabled}`;
+
+    if (!lastAppliedCaptureDeviceSignatureRef.current) {
+      lastAppliedCaptureDeviceSignatureRef.current = currentSignature;
+      return;
+    }
+
+    if (lastAppliedCaptureDeviceSignatureRef.current === currentSignature) {
+      return;
+    }
+
+    lastAppliedCaptureDeviceSignatureRef.current = currentSignature;
+    void startPreviewRef.current?.();
+  }, [
+    captureStatus,
+    isAudioEnabled,
+    isRemoteMonitor,
+    isVideoEnabled,
+    selectedAudioDeviceId,
+    selectedVideoDeviceId,
   ]);
 
   useEffect(() => {
@@ -2046,37 +2196,25 @@ export function LiveLabPage({
 
       try {
         nextStream = await navigator.mediaDevices.getUserMedia({
-          video: isVideoEnabled
-            ? {
-                deviceId: selectedVideoDeviceId ? { exact: selectedVideoDeviceId } : undefined,
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                frameRate: { ideal: 30, max: 30 },
-              }
-            : false,
-          audio: isAudioEnabled
-            ? {
-                deviceId: selectedAudioDeviceId ? { exact: selectedAudioDeviceId } : undefined,
-                echoCancellation: true,
-                noiseSuppression: true,
-              }
-            : false,
+          video: buildVideoConstraints(),
+          audio: buildAudioConstraints(),
         });
       } catch {
         nextStream = await navigator.mediaDevices.getUserMedia({
           video: isVideoEnabled
             ? {
+                facingMode: detectFacingModeFromLabel(preferredVideoDeviceLabelRef.current)
+                  ? {
+                      ideal:
+                        detectFacingModeFromLabel(preferredVideoDeviceLabelRef.current) ?? undefined,
+                    }
+                  : undefined,
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
                 frameRate: { ideal: 30, max: 30 },
               }
             : false,
-          audio: isAudioEnabled
-            ? {
-                echoCancellation: true,
-                noiseSuppression: true,
-              }
-            : false,
+          audio: buildAudioConstraints(),
         });
       }
 
@@ -4558,7 +4696,7 @@ export function LiveLabPage({
                     <select
                       className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
                       disabled={isLoadingDevices || videoDevices.length === 0}
-                      onChange={(event) => setSelectedVideoDeviceId(event.target.value)}
+                      onChange={(event) => handleVideoDeviceSelection(event.target.value)}
                       value={selectedVideoDeviceId}
                     >
                       {videoDevices.map((device) => (
@@ -4576,7 +4714,7 @@ export function LiveLabPage({
                     <select
                       className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
                       disabled={isLoadingDevices || audioDevices.length === 0}
-                      onChange={(event) => setSelectedAudioDeviceId(event.target.value)}
+                      onChange={(event) => handleAudioDeviceSelection(event.target.value)}
                       value={selectedAudioDeviceId}
                     >
                       {audioDevices.map((device) => (
@@ -4812,7 +4950,7 @@ export function LiveLabPage({
                         <select
                           className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
                           disabled={isLoadingDevices || videoDevices.length === 0}
-                          onChange={(event) => setSelectedVideoDeviceId(event.target.value)}
+                          onChange={(event) => handleVideoDeviceSelection(event.target.value)}
                           value={selectedVideoDeviceId}
                         >
                           {videoDevices.map((device) => (
@@ -4830,7 +4968,7 @@ export function LiveLabPage({
                         <select
                           className="rounded-[1rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(4,17,12,0.86)] px-4 py-3 text-sm text-[rgba(255,247,224,0.95)] outline-none transition focus:border-[rgba(255,208,101,0.34)]"
                           disabled={isLoadingDevices || audioDevices.length === 0}
-                          onChange={(event) => setSelectedAudioDeviceId(event.target.value)}
+                          onChange={(event) => handleAudioDeviceSelection(event.target.value)}
                           value={selectedAudioDeviceId}
                         >
                           {audioDevices.map((device) => (

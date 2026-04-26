@@ -47,13 +47,6 @@ export const shplNavItems: SHPLNavItem[] = [
     access: "table",
   },
   {
-    href: "/shpl-2026/historico",
-    label: "Historico",
-    icon: "H",
-    iconSrc: "/icons/shpl-menu/historico.svg",
-    access: "admin",
-  },
-  {
     href: "/shpl-2026/estatisticas",
     label: "Estatisticas",
     icon: "S",
