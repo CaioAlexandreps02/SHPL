@@ -1,12 +1,5 @@
-"use client";
-
-import { useEffect, useMemo, useRef, useState } from "react";
-
-import { PlayerAvatar } from "@/components/player-avatar";
 import type { LeagueSnapshot } from "@/lib/domain/types";
-
-const DESKTOP_SIDEBAR_COLLAPSED_STORAGE_KEY = "shpl-desktop-sidebar-collapsed";
-const DESKTOP_SIDEBAR_COLLAPSED_EVENT = "shpl-desktop-sidebar-collapsed-change";
+import { PlayerAvatar } from "@/components/player-avatar";
 
 export function SHPLAnnualClassification({
   snapshot,
@@ -17,95 +10,14 @@ export function SHPLAnnualClassification({
   title?: string;
   description?: string;
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
-  const [scrollContainerWidth, setScrollContainerWidth] = useState(0);
   const nameColumnWidth = 250;
+  const stageColumnWidth = 190;
   const totalColumnWidth = 160;
-  const targetVisibleStageCount = isDesktopCollapsed ? 4 : 3;
-  const stageColumnWidth = useMemo(() => {
-    if (!scrollContainerWidth) {
-      return isDesktopCollapsed ? 165 : 240;
-    }
-
-    const availableStageWidth = Math.max(
-      scrollContainerWidth - nameColumnWidth - totalColumnWidth,
-      0,
-    );
-    const computedStageWidth = Math.floor(availableStageWidth / targetVisibleStageCount);
-
-    return Math.max(145, computedStageWidth);
-  }, [isDesktopCollapsed, scrollContainerWidth, targetVisibleStageCount]);
+  const visibleStageColumns = 3;
+  const visibleWindowWidth =
+    nameColumnWidth + totalColumnWidth + visibleStageColumns * stageColumnWidth;
   const tableMinWidth =
     nameColumnWidth + totalColumnWidth + snapshot.annualStagePoints.length * stageColumnWidth;
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const syncCollapsedState = (collapsed?: boolean) => {
-      if (typeof collapsed === "boolean") {
-        setIsDesktopCollapsed(collapsed);
-        return;
-      }
-
-      setIsDesktopCollapsed(
-        window.localStorage.getItem(DESKTOP_SIDEBAR_COLLAPSED_STORAGE_KEY) === "true",
-      );
-    };
-
-    syncCollapsedState();
-
-    const handleCollapsedChange = (event: Event) => {
-      const customEvent = event as CustomEvent<{ collapsed?: boolean }>;
-      syncCollapsedState(customEvent.detail?.collapsed);
-    };
-
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === DESKTOP_SIDEBAR_COLLAPSED_STORAGE_KEY) {
-        syncCollapsedState(event.newValue === "true");
-      }
-    };
-
-    window.addEventListener(DESKTOP_SIDEBAR_COLLAPSED_EVENT, handleCollapsedChange);
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      window.removeEventListener(DESKTOP_SIDEBAR_COLLAPSED_EVENT, handleCollapsedChange);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const container = containerRef.current;
-
-    if (!container) {
-      return;
-    }
-
-    const updateWidth = () => {
-      setScrollContainerWidth(container.clientWidth);
-    };
-
-    updateWidth();
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateWidth();
-    });
-
-    resizeObserver.observe(container);
-    window.addEventListener(DESKTOP_SIDEBAR_COLLAPSED_EVENT, updateWidth);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener(DESKTOP_SIDEBAR_COLLAPSED_EVENT, updateWidth);
-    };
-  }, []);
 
   return (
     <section className="rounded-[1.8rem] border border-[rgba(255,208,101,0.16)] bg-[linear-gradient(180deg,rgba(12,44,31,0.92),rgba(7,24,18,0.98))] p-5 shadow-[0_20px_45px_rgba(0,0,0,0.28)] md:p-6">
@@ -142,9 +54,8 @@ export function SHPLAnnualClassification({
       </div>
 
       <div
-        ref={containerRef}
-        className="mt-5 min-w-0 w-full max-w-full overflow-x-auto rounded-[1.35rem] border border-[rgba(255,208,101,0.12)]"
-        style={{ width: "100%" }}
+        className="mt-5 max-w-full overflow-x-auto rounded-[1.35rem] border border-[rgba(255,208,101,0.12)]"
+        style={{ width: "100%", maxWidth: `${visibleWindowWidth}px` }}
       >
         <table className="border-collapse" style={{ minWidth: `${tableMinWidth}px` }}>
           <thead>
@@ -205,11 +116,13 @@ export function SHPLAnnualClassification({
                     : "bg-[rgba(8,28,20,0.96)]"
                 }
               >
-                <td className={`sticky left-0 z-10 border-b border-r border-[rgba(255,208,101,0.1)] px-4 py-3 text-left text-base font-medium text-[rgba(255,244,214,0.96)] ${
-                  index % 2 === 0
-                    ? "bg-[rgba(11,37,27,0.98)]"
-                    : "bg-[rgba(8,28,20,0.99)]"
-                }`}>
+                <td
+                  className={`sticky left-0 z-10 border-b border-r border-[rgba(255,208,101,0.1)] px-4 py-3 text-left text-base font-medium text-[rgba(255,244,214,0.96)] ${
+                    index % 2 === 0
+                      ? "bg-[rgba(11,37,27,0.98)]"
+                      : "bg-[rgba(8,28,20,0.99)]"
+                  }`}
+                >
                   <div className="flex items-center gap-3">
                     <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(255,208,101,0.18)] bg-[rgba(255,183,32,0.12)] text-[0.68rem] font-semibold text-[rgba(255,236,184,0.96)]">
                       {entry.position}
@@ -230,11 +143,13 @@ export function SHPLAnnualClassification({
                     {stage.pointsByPlayer[entry.playerId] ?? 0}
                   </td>
                 ))}
-                <td className={`sticky right-0 z-10 border-b border-l border-[rgba(255,208,101,0.1)] px-4 py-3 text-center text-lg font-semibold text-[rgba(255,236,184,0.96)] ${
-                  index % 2 === 0
-                    ? "bg-[rgba(11,37,27,0.98)]"
-                    : "bg-[rgba(8,28,20,0.99)]"
-                }`}>
+                <td
+                  className={`sticky right-0 z-10 border-b border-l border-[rgba(255,208,101,0.1)] px-4 py-3 text-center text-lg font-semibold text-[rgba(255,236,184,0.96)] ${
+                    index % 2 === 0
+                      ? "bg-[rgba(11,37,27,0.98)]"
+                      : "bg-[rgba(8,28,20,0.99)]"
+                  }`}
+                >
                   {entry.points}
                 </td>
               </tr>

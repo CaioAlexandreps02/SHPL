@@ -691,6 +691,15 @@ export function LiveLabPage({
     liveSessionStatusRef.current = "idle";
   }
 
+  function stopMonitorPreviewLocally() {
+    clearRemotePreviewStream();
+    clearRemotePreviewFrame();
+    setCaptureStatus("idle");
+    setRemoteBridgeStatus(
+      "Preview local do monitor pausado. Use iniciar preview para reconectar a visualizacao remota.",
+    );
+  }
+
   async function refreshLocalTranscriptionAvailability(options: { force?: boolean } = {}) {
     if (!options.force && localTranscriptionAvailableRef.current !== null) {
       return localTranscriptionAvailableRef.current;
@@ -2021,12 +2030,9 @@ export function LiveLabPage({
       setHasFinishedSession(false);
 
       if (isRemoteMonitor) {
-        setRemoteBridgeStatus("Enviando comando para a fonte abrir o preview...");
-        await sendLiveRemoteMessage({
-          type: "command",
-          fromId: getOrCreateIntegratedDeviceId(),
-          command: "start-preview",
-        });
+        stopMonitorPreviewLocally();
+        setRemoteBridgeStatus("Solicitando novamente o preview remoto da fonte de captura...");
+        await announceViewerReady();
         return;
       }
 
@@ -2138,13 +2144,7 @@ export function LiveLabPage({
 
   async function stopStream() {
     if (isRemoteMonitor) {
-      setRemoteBridgeStatus("Enviando comando para a fonte encerrar o preview...");
-      void sendLiveRemoteMessage({
-        type: "command",
-        fromId: getOrCreateIntegratedDeviceId(),
-        command: "stop-preview",
-      });
-      resetRemotePreviewState();
+      stopMonitorPreviewLocally();
       return;
     }
 
@@ -4204,10 +4204,6 @@ export function LiveLabPage({
       return false;
     }
 
-    if (source === "browser") {
-      return false;
-    }
-
     if (!looksLikeTableSpeech(cleanText, normalized)) {
       return false;
     }
@@ -4216,7 +4212,14 @@ export function LiveLabPage({
     const recent = recentTranscriptSignaturesRef.current.filter((entry) => now - entry.at < 8000);
     recentTranscriptSignaturesRef.current = recent;
     const isFastActionSpeech = looksLikeFastActionSpeech(normalized);
-    const exactDuplicateWindowMs = isFastActionSpeech ? 1200 : 8000;
+    const exactDuplicateWindowMs =
+      source === "browser"
+        ? isFastActionSpeech
+          ? 900
+          : 4500
+        : isFastActionSpeech
+          ? 1200
+          : 8000;
 
     const duplicate = recent.some((entry) => {
       if (entry.key === normalized && now - entry.at < exactDuplicateWindowMs) {
