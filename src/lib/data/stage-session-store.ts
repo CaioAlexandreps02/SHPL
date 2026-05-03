@@ -151,3 +151,6 @@ export async function appendStageSessionEntries(
   );
 }
 
+export async function getStageSessionText(stageId: string) {
+  return readServerTextDocument(buildStageSessionTextDocumentName(stageId), () => "");
+}

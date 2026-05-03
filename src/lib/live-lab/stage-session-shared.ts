@@ -27,6 +27,16 @@ export type StoredStageTransmissionPayload = {
   activeHandStartedAt?: string | null;
   recentCompletedHandTitle?: string | null;
   recentCompletedHandEndedAt?: string | null;
+  browserRecognitionSupported?: boolean | null;
+  localTranscriptionAvailable?: boolean | null;
+  audioTrackDetected?: boolean | null;
+  transcriptReceivedCount?: number;
+  transcriptAcceptedCount?: number;
+  transcriptDiscardedCount?: number;
+  lastTranscriptAt?: string | null;
+  lastAcceptedTranscriptAt?: string | null;
+  lastTranscriptPreview?: string | null;
+  transcriptError?: string | null;
   recentTranscriptEntries?: Array<{
     id?: string;
     at?: string;
@@ -81,6 +91,16 @@ export function normalizeStoredStageTransmissionPayload(
     activeHandStartedAt: payload.activeHandStartedAt ?? null,
     recentCompletedHandTitle: payload.recentCompletedHandTitle ?? null,
     recentCompletedHandEndedAt: payload.recentCompletedHandEndedAt ?? null,
+    browserRecognitionSupported: payload.browserRecognitionSupported ?? null,
+    localTranscriptionAvailable: payload.localTranscriptionAvailable ?? null,
+    audioTrackDetected: payload.audioTrackDetected ?? null,
+    transcriptReceivedCount: Math.max(payload.transcriptReceivedCount ?? 0, 0),
+    transcriptAcceptedCount: Math.max(payload.transcriptAcceptedCount ?? 0, 0),
+    transcriptDiscardedCount: Math.max(payload.transcriptDiscardedCount ?? 0, 0),
+    lastTranscriptAt: payload.lastTranscriptAt ?? null,
+    lastAcceptedTranscriptAt: payload.lastAcceptedTranscriptAt ?? null,
+    lastTranscriptPreview: payload.lastTranscriptPreview ?? null,
+    transcriptError: payload.transcriptError ?? null,
     recentTranscriptEntries:
       payload.recentTranscriptEntries
         ?.map((entry) => ({

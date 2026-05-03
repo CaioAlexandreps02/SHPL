@@ -4,6 +4,7 @@ import { canManageTable, getUserAccessFromCookieHeader } from "@/lib/auth/access
 import {
   appendStageSessionEntries,
   ensureStoredStageSession,
+  getStageSessionText,
   getStoredStageSession,
   saveStoredStageSession,
 } from "@/lib/data/stage-session-store";
@@ -29,13 +30,15 @@ type StageSessionRequestPayload = {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const stageId = searchParams.get("stageId");
+  const includeText = searchParams.get("includeText") === "1";
 
   if (!stageId) {
     return NextResponse.json({ error: "Informe a etapa." }, { status: 400 });
   }
 
   const session = await getStoredStageSession(stageId);
-  return NextResponse.json({ session });
+  const text = includeText ? await getStageSessionText(stageId) : null;
+  return NextResponse.json({ session, text });
 }
 
 export async function POST(request: Request) {
@@ -96,4 +99,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

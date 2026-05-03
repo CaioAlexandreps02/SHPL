@@ -217,6 +217,16 @@ type LiveRemoteMessage =
       activeHandStartedAt?: string | null;
       recentCompletedHandTitle?: string | null;
       recentCompletedHandEndedAt?: string | null;
+      browserRecognitionSupported?: boolean | null;
+      localTranscriptionAvailable?: boolean | null;
+      audioTrackDetected?: boolean | null;
+      transcriptReceivedCount?: number;
+      transcriptAcceptedCount?: number;
+      transcriptDiscardedCount?: number;
+      lastTranscriptAt?: string | null;
+      lastAcceptedTranscriptAt?: string | null;
+      lastTranscriptPreview?: string | null;
+      transcriptError?: string | null;
       recentTranscriptEntries?: TranscriptEntry[];
     }
   | {
@@ -269,6 +279,16 @@ function resolveIntegratedActiveView(
   }
 
   return "capture";
+}
+
+function summarizeTranscriptPreview(text: string, maxLength = 80) {
+  const trimmed = text.trim();
+
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
 const STORAGE_KEY = "shpl-live-lab-settings";
@@ -412,6 +432,14 @@ export function LiveLabPage({
   const autoStartNextHandTimeoutRef = useRef<number | null>(null);
   const stageTranscriptFlushTimeoutRef = useRef<number | null>(null);
   const syncedStageTranscriptLineCountRef = useRef(0);
+  const browserRecognitionSupportedRef = useRef<boolean | null>(null);
+  const localTranscriptionAvailableStateRef = useRef<boolean | null>(null);
+  const transcriptReceivedCountRef = useRef(0);
+  const transcriptAcceptedCountRef = useRef(0);
+  const transcriptDiscardedCountRef = useRef(0);
+  const lastTranscriptAtRef = useRef<string>("");
+  const lastAcceptedTranscriptAtRef = useRef<string>("");
+  const lastTranscriptPreviewRef = useRef("");
   const liveHandTrackerRef = useRef<LiveHandTrackerState>({
     lastStreet: null,
     lastPlayerCountHint: null,
@@ -467,6 +495,18 @@ export function LiveLabPage({
   const [activeHandStartedAtIso, setActiveHandStartedAtIso] = useState("");
   const [recentCompletedHandTitle, setRecentCompletedHandTitle] = useState("");
   const [recentCompletedHandEndedAtIso, setRecentCompletedHandEndedAtIso] = useState("");
+  const [browserRecognitionSupported, setBrowserRecognitionSupported] = useState<boolean | null>(null);
+  const [localTranscriptionAvailableState, setLocalTranscriptionAvailableState] =
+    useState<boolean | null>(null);
+  const [audioTrackDetected, setAudioTrackDetected] = useState<boolean | null>(null);
+  const [transcriptReceivedCount, setTranscriptReceivedCount] = useState(0);
+  const [transcriptAcceptedCount, setTranscriptAcceptedCount] = useState(0);
+  const [transcriptDiscardedCount, setTranscriptDiscardedCount] = useState(0);
+  const [lastTranscriptAtIso, setLastTranscriptAtIso] = useState("");
+  const [lastAcceptedTranscriptAtIso, setLastAcceptedTranscriptAtIso] = useState("");
+  const [lastTranscriptPreview, setLastTranscriptPreview] = useState("");
+  const [officialStageTranscriptContent, setOfficialStageTranscriptContent] = useState("");
+  const [isLoadingOfficialStageTranscript, setIsLoadingOfficialStageTranscript] = useState(false);
   const [savedVideos, setSavedVideos] = useState<SavedHandClipSummary[]>([]);
   const [isLoadingSavedVideos, setIsLoadingSavedVideos] = useState(true);
   const [selectedVideoId, setSelectedVideoId] = useState("");
@@ -721,6 +761,24 @@ export function LiveLabPage({
           overrides?.recentCompletedHandTitle ?? recentCompletedHandTitle ?? null,
         recentCompletedHandEndedAt:
           overrides?.recentCompletedHandEndedAt ?? recentCompletedHandEndedAtIso ?? null,
+        browserRecognitionSupported:
+          overrides?.browserRecognitionSupported ?? browserRecognitionSupportedRef.current,
+        localTranscriptionAvailable:
+          overrides?.localTranscriptionAvailable ?? localTranscriptionAvailableStateRef.current,
+        audioTrackDetected:
+          overrides?.audioTrackDetected ?? Boolean(streamRef.current?.getAudioTracks()[0]),
+        transcriptReceivedCount:
+          overrides?.transcriptReceivedCount ?? transcriptReceivedCountRef.current,
+        transcriptAcceptedCount:
+          overrides?.transcriptAcceptedCount ?? transcriptAcceptedCountRef.current,
+        transcriptDiscardedCount:
+          overrides?.transcriptDiscardedCount ?? transcriptDiscardedCountRef.current,
+        lastTranscriptAt: overrides?.lastTranscriptAt ?? (lastTranscriptAtRef.current || null),
+        lastAcceptedTranscriptAt:
+          overrides?.lastAcceptedTranscriptAt ?? (lastAcceptedTranscriptAtRef.current || null),
+        lastTranscriptPreview:
+          overrides?.lastTranscriptPreview ?? (lastTranscriptPreviewRef.current || null),
+        transcriptError: overrides?.transcriptError ?? transcriptError ?? null,
         recentTranscriptEntries:
           overrides?.recentTranscriptEntries ?? transcriptFeed.slice(0, 24),
       });
@@ -737,6 +795,7 @@ export function LiveLabPage({
       liveSessionStatus,
       recentCompletedHandEndedAtIso,
       recentCompletedHandTitle,
+      transcriptError,
       transcriptFeed,
     ],
   );
@@ -819,9 +878,13 @@ export function LiveLabPage({
       const payload = (await response.json()) as { available?: boolean };
       const isAvailable = Boolean(payload.available);
       localTranscriptionAvailableRef.current = isAvailable;
+      localTranscriptionAvailableStateRef.current = isAvailable;
+      setLocalTranscriptionAvailableState(isAvailable);
       return isAvailable;
     } catch {
       localTranscriptionAvailableRef.current = false;
+      localTranscriptionAvailableStateRef.current = false;
+      setLocalTranscriptionAvailableState(false);
       return false;
     }
   }
@@ -1116,6 +1179,30 @@ export function LiveLabPage({
           overrides?.transmission?.recentCompletedHandEndedAt ??
           recentCompletedHandEndedAtIso ??
           null,
+        browserRecognitionSupported:
+          overrides?.transmission?.browserRecognitionSupported ??
+          browserRecognitionSupportedRef.current,
+        localTranscriptionAvailable:
+          overrides?.transmission?.localTranscriptionAvailable ??
+          localTranscriptionAvailableStateRef.current,
+        audioTrackDetected:
+          overrides?.transmission?.audioTrackDetected ??
+          Boolean(streamRef.current?.getAudioTracks()[0]),
+        transcriptReceivedCount:
+          overrides?.transmission?.transcriptReceivedCount ?? transcriptReceivedCountRef.current,
+        transcriptAcceptedCount:
+          overrides?.transmission?.transcriptAcceptedCount ?? transcriptAcceptedCountRef.current,
+        transcriptDiscardedCount:
+          overrides?.transmission?.transcriptDiscardedCount ?? transcriptDiscardedCountRef.current,
+        lastTranscriptAt:
+          overrides?.transmission?.lastTranscriptAt ?? (lastTranscriptAtRef.current || null),
+        lastAcceptedTranscriptAt:
+          overrides?.transmission?.lastAcceptedTranscriptAt ??
+          (lastAcceptedTranscriptAtRef.current || null),
+        lastTranscriptPreview:
+          overrides?.transmission?.lastTranscriptPreview ??
+          (lastTranscriptPreviewRef.current || null),
+        transcriptError: overrides?.transmission?.transcriptError ?? transcriptError ?? null,
         recentTranscriptEntries:
           overrides?.transmission?.recentTranscriptEntries ?? transcriptFeed.slice(0, 24),
         updatedAt: new Date().toISOString(),
@@ -1165,6 +1252,7 @@ export function LiveLabPage({
       remoteBridgeStatus,
       recentCompletedHandEndedAtIso,
       recentCompletedHandTitle,
+      transcriptError,
       transcriptFeed,
       commandEngineLabel,
     ],
@@ -1205,6 +1293,26 @@ export function LiveLabPage({
       setActiveHandStartedAtIso(transmission.activeHandStartedAt ?? "");
       setRecentCompletedHandTitle(transmission.recentCompletedHandTitle ?? "");
       setRecentCompletedHandEndedAtIso(transmission.recentCompletedHandEndedAt ?? "");
+      setBrowserRecognitionSupported(transmission.browserRecognitionSupported ?? null);
+      browserRecognitionSupportedRef.current = transmission.browserRecognitionSupported ?? null;
+      setLocalTranscriptionAvailableState(transmission.localTranscriptionAvailable ?? null);
+      localTranscriptionAvailableStateRef.current = transmission.localTranscriptionAvailable ?? null;
+      setAudioTrackDetected(transmission.audioTrackDetected ?? null);
+      setTranscriptReceivedCount(transmission.transcriptReceivedCount ?? 0);
+      transcriptReceivedCountRef.current = transmission.transcriptReceivedCount ?? 0;
+      setTranscriptAcceptedCount(transmission.transcriptAcceptedCount ?? 0);
+      transcriptAcceptedCountRef.current = transmission.transcriptAcceptedCount ?? 0;
+      setTranscriptDiscardedCount(transmission.transcriptDiscardedCount ?? 0);
+      transcriptDiscardedCountRef.current = transmission.transcriptDiscardedCount ?? 0;
+      setLastTranscriptAtIso(transmission.lastTranscriptAt ?? "");
+      lastTranscriptAtRef.current = transmission.lastTranscriptAt ?? "";
+      setLastAcceptedTranscriptAtIso(transmission.lastAcceptedTranscriptAt ?? "");
+      lastAcceptedTranscriptAtRef.current = transmission.lastAcceptedTranscriptAt ?? "";
+      setLastTranscriptPreview(transmission.lastTranscriptPreview ?? "");
+      lastTranscriptPreviewRef.current = transmission.lastTranscriptPreview ?? "";
+      if (transmission.transcriptError) {
+        setTranscriptError(transmission.transcriptError);
+      }
       setTranscriptFeed(
         (transmission.recentTranscriptEntries ?? []).map((entry) => ({
           id:
@@ -1221,6 +1329,44 @@ export function LiveLabPage({
       // O monitor continua operando apenas com o canal realtime se a hidratacao inicial falhar.
     }
   }, [deviceRole, linkedStageContext, linkedStageOption]);
+  function resetTranscriptDiagnostics() {
+    transcriptReceivedCountRef.current = 0;
+    transcriptAcceptedCountRef.current = 0;
+    transcriptDiscardedCountRef.current = 0;
+    lastTranscriptAtRef.current = "";
+    lastAcceptedTranscriptAtRef.current = "";
+    lastTranscriptPreviewRef.current = "";
+    setTranscriptReceivedCount(0);
+    setTranscriptAcceptedCount(0);
+    setTranscriptDiscardedCount(0);
+    setLastTranscriptAtIso("");
+    setLastAcceptedTranscriptAtIso("");
+    setLastTranscriptPreview("");
+  }
+  const refreshOfficialStageTranscript = useCallback(async () => {
+    const stageId = linkedStageContext?.stageId ?? linkedStageOption?.stageId;
+
+    if (!stageId) {
+      setOfficialStageTranscriptContent("");
+      return;
+    }
+
+    try {
+      setIsLoadingOfficialStageTranscript(true);
+      const response = await fetch(
+        `/api/shpl-admin/stage-session?stageId=${encodeURIComponent(stageId)}&includeText=1`,
+        {
+          cache: "no-store",
+        },
+      );
+      const data = (await response.json()) as { text?: string | null };
+      setOfficialStageTranscriptContent(data.text ?? "");
+    } catch {
+      setOfficialStageTranscriptContent("");
+    } finally {
+      setIsLoadingOfficialStageTranscript(false);
+    }
+  }, [linkedStageContext, linkedStageOption]);
 
   const loadDevices = useCallback(async () => {
     try {
@@ -1463,6 +1609,18 @@ export function LiveLabPage({
           setActiveHandStartedAtIso(payload.activeHandStartedAt ?? "");
           setRecentCompletedHandTitle(payload.recentCompletedHandTitle ?? "");
           setRecentCompletedHandEndedAtIso(payload.recentCompletedHandEndedAt ?? "");
+          setBrowserRecognitionSupported(payload.browserRecognitionSupported ?? null);
+          setLocalTranscriptionAvailableState(payload.localTranscriptionAvailable ?? null);
+          setAudioTrackDetected(payload.audioTrackDetected ?? null);
+          setTranscriptReceivedCount(payload.transcriptReceivedCount ?? 0);
+          setTranscriptAcceptedCount(payload.transcriptAcceptedCount ?? 0);
+          setTranscriptDiscardedCount(payload.transcriptDiscardedCount ?? 0);
+          setLastTranscriptAtIso(payload.lastTranscriptAt ?? "");
+          setLastAcceptedTranscriptAtIso(payload.lastAcceptedTranscriptAt ?? "");
+          setLastTranscriptPreview(payload.lastTranscriptPreview ?? "");
+          if (payload.transcriptError !== undefined) {
+            setTranscriptError(payload.transcriptError ?? "");
+          }
           if (payload.recentTranscriptEntries) {
             setTranscriptFeed(payload.recentTranscriptEntries);
           }
@@ -1591,8 +1749,18 @@ export function LiveLabPage({
     liveSessionStatus,
     activeHandStartedAtIso,
     activeHandTitle,
+    audioTrackDetected,
+    browserRecognitionSupported,
+    lastAcceptedTranscriptAtIso,
+    lastTranscriptAtIso,
+    lastTranscriptPreview,
+    localTranscriptionAvailableState,
     recentCompletedHandEndedAtIso,
     recentCompletedHandTitle,
+    transcriptAcceptedCount,
+    transcriptDiscardedCount,
+    transcriptError,
+    transcriptReceivedCount,
     transcriptFeed,
   ]);
 
@@ -1603,6 +1771,28 @@ export function LiveLabPage({
 
     void hydrateTransmissionSnapshotFromStageSession();
   }, [deviceRole, hydrateTransmissionSnapshotFromStageSession, integratedMode]);
+
+  useEffect(() => {
+    if (!integratedMode || (!isIntegratedMonitorView && !isIntegratedFullView)) {
+      return;
+    }
+
+    void refreshOfficialStageTranscript();
+    const intervalId = window.setInterval(() => {
+      void refreshOfficialStageTranscript();
+    }, 2000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    integratedMode,
+    isIntegratedFullView,
+    isIntegratedMonitorView,
+    linkedStageContext,
+    linkedStageOption,
+    refreshOfficialStageTranscript,
+  ]);
 
   useEffect(() => {
     if (!integratedMode || !canPublishCapture || captureStatus !== "preview") {
@@ -1792,14 +1982,24 @@ export function LiveLabPage({
     deviceRole,
     hasFinishedSession,
     integratedMode,
+    lastAcceptedTranscriptAtIso,
+    lastTranscriptAtIso,
+    lastTranscriptPreview,
     linkedStageContext,
     linkedStageOption,
+    localTranscriptionAvailableState,
     liveSessionStatus,
     remoteBridgeStatus,
     recentCompletedHandEndedAtIso,
     recentCompletedHandTitle,
     syncLinkedStageSession,
+    transcriptAcceptedCount,
+    transcriptDiscardedCount,
+    transcriptError,
+    transcriptReceivedCount,
     transcriptFeed,
+    audioTrackDetected,
+    browserRecognitionSupported,
   ]);
 
   useEffect(() => {
@@ -2232,6 +2432,51 @@ export function LiveLabPage({
       ? transcriptFeed.slice(0, 3)
       : transcriptFeed;
   const hiddenTranscriptFeedCount = Math.max(0, transcriptFeed.length - visibleTranscriptFeed.length);
+  const transcriptDiagnostics = [
+    {
+      label: "Reconhecimento do navegador",
+      value:
+        browserRecognitionSupported === null
+          ? "nao verificado"
+          : browserRecognitionSupported
+            ? "disponivel"
+            : "indisponivel",
+    },
+    {
+      label: "Motor local",
+      value:
+        localTranscriptionAvailableState === null
+          ? "nao verificado"
+          : localTranscriptionAvailableState
+            ? "disponivel"
+            : "indisponivel",
+    },
+    {
+      label: "Faixa de audio",
+      value:
+        audioTrackDetected === null ? "nao verificada" : audioTrackDetected ? "detectada" : "ausente",
+    },
+    {
+      label: "Falas recebidas",
+      value: String(transcriptReceivedCount),
+    },
+    {
+      label: "Falas aceitas",
+      value: String(transcriptAcceptedCount),
+    },
+    {
+      label: "Falas descartadas",
+      value: String(transcriptDiscardedCount),
+    },
+    {
+      label: "Ultima fala",
+      value: lastTranscriptAtIso ? formatTimeOnly(lastTranscriptAtIso) : "--:--:--",
+    },
+    {
+      label: "Ultima aceita",
+      value: lastAcceptedTranscriptAtIso ? formatTimeOnly(lastAcceptedTranscriptAtIso) : "--:--:--",
+    },
+  ];
 
   const boardCardSummaries = useMemo(() => {
     if (!boardDetection || boardDetection.boxes.length === 0) {
@@ -2372,6 +2617,7 @@ export function LiveLabPage({
       nextStream.getAudioTracks().forEach((track) => {
         track.enabled = isAudioEnabled;
       });
+      setAudioTrackDetected(Boolean(nextStream.getAudioTracks()[0]));
 
       await syncPreviewElementsWithStream(nextStream);
 
@@ -2417,6 +2663,7 @@ export function LiveLabPage({
 
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    setAudioTrackDetected(false);
 
     await syncPreviewElementsWithStream(null);
     setCaptureStatus("idle");
@@ -2445,9 +2692,14 @@ export function LiveLabPage({
     const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
 
     if (!SpeechRecognitionCtor) {
+      browserRecognitionSupportedRef.current = false;
+      setBrowserRecognitionSupported(false);
       setCommandEngineLabel("Comando por navegador indisponivel; usando fallback local");
       return false;
     }
+
+    browserRecognitionSupportedRef.current = true;
+    setBrowserRecognitionSupported(true);
 
     const recognition = new SpeechRecognitionCtor();
     recognition.continuous = true;
@@ -2593,6 +2845,7 @@ export function LiveLabPage({
       clearStageTranscriptFlushTimeout();
       recentTranscriptSignaturesRef.current = [];
       recentCompletedHandRef.current = null;
+      resetTranscriptDiagnostics();
       resetLiveHandTracker();
 
       if (currentLinkedStageContext) {
@@ -3001,6 +3254,15 @@ export function LiveLabPage({
     const normalized = normalizeCommandText(rawText);
     const command = detectTranscriptCommand(normalized);
     const cleanText = rawText.trim();
+    if (cleanText) {
+      const receivedAt = new Date().toISOString();
+      transcriptReceivedCountRef.current += 1;
+      lastTranscriptAtRef.current = receivedAt;
+      lastTranscriptPreviewRef.current = summarizeTranscriptPreview(cleanText);
+      setTranscriptReceivedCount(transcriptReceivedCountRef.current);
+      setLastTranscriptAtIso(receivedAt);
+      setLastTranscriptPreview(lastTranscriptPreviewRef.current);
+    }
     const shouldPersistLine = shouldPersistTranscriptLine({
       source,
       normalized,
@@ -3022,7 +3284,14 @@ export function LiveLabPage({
     }
 
     if (cleanText && shouldPersistLine) {
+      transcriptAcceptedCountRef.current += 1;
+      lastAcceptedTranscriptAtRef.current = new Date().toISOString();
+      setTranscriptAcceptedCount(transcriptAcceptedCountRef.current);
+      setLastAcceptedTranscriptAtIso(lastAcceptedTranscriptAtRef.current);
       appendSessionTranscriptLine(`${source === "browser" ? "Navegador" : "Whisper"}: ${cleanText}`);
+    } else if (cleanText) {
+      transcriptDiscardedCountRef.current += 1;
+      setTranscriptDiscardedCount(transcriptDiscardedCountRef.current);
     }
 
     if (shouldPersistLine || command !== "none") {
@@ -5576,6 +5845,34 @@ export function LiveLabPage({
                 Comandos detectados
               </h2>
 
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                {transcriptDiagnostics.map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-4"
+                  >
+                    <p className="text-[0.7rem] uppercase tracking-[0.18em] text-[rgba(240,227,189,0.48)]">
+                      {item.label}
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-[rgba(255,239,192,0.92)]">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {lastTranscriptPreview ? (
+                <div className="mt-4 rounded-[1.2rem] border border-[rgba(129,196,255,0.16)] bg-[rgba(129,196,255,0.06)] px-4 py-4 text-sm leading-7 text-[rgba(220,239,255,0.92)]">
+                  Ultima fala captada: <strong>{lastTranscriptPreview}</strong>
+                </div>
+              ) : null}
+
+              {transcriptError ? (
+                <div className="mt-4 rounded-[1.2rem] border border-[rgba(255,122,122,0.18)] bg-[rgba(255,122,122,0.08)] px-4 py-4 text-sm leading-7 text-[rgba(255,223,223,0.92)]">
+                  Erro atual da transcricao: <strong>{transcriptError}</strong>
+                </div>
+              ) : null}
+
               <div className="mt-5 grid gap-3">
                 {transcriptFeed.length === 0 ? (
                   <div className="rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-5 text-sm leading-7 text-[rgba(237,226,197,0.68)]">
@@ -5700,18 +5997,36 @@ export function LiveLabPage({
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[0.72rem] uppercase tracking-[0.24em] text-[rgba(240,227,189,0.5)]">
-                    Transcricoes da sessao
+                    {integratedMode ? "Sessao oficial da etapa" : "Transcricoes da sessao"}
                   </p>
                   <h2 className="mt-2 text-2xl font-bold text-[rgba(255,239,192,0.96)]">
-                    Arquivos TXT
+                    {integratedMode ? "TXT da etapa vinculada" : "Arquivos TXT"}
                   </h2>
                 </div>
 
-                <ActionButton label="Atualizar lista" onClick={() => void refreshSavedTranscripts()} tone="muted" />
+                <ActionButton
+                  label="Atualizar lista"
+                  onClick={() =>
+                    void (integratedMode ? refreshOfficialStageTranscript() : refreshSavedTranscripts())
+                  }
+                  tone="muted"
+                />
               </div>
 
               <div className="mt-5 grid gap-4">
-                {isLoadingSavedTranscripts ? (
+                {integratedMode ? (
+                  isLoadingOfficialStageTranscript ? (
+                    <p className="text-sm text-[rgba(237,226,197,0.72)]">Carregando TXT oficial...</p>
+                  ) : !officialStageTranscriptContent ? (
+                    <div className="rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-5 text-sm leading-7 text-[rgba(237,226,197,0.68)]">
+                      O TXT oficial da etapa ainda nao recebeu linhas suficientes para exibicao.
+                    </div>
+                  ) : (
+                    <div className="rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-5 text-sm leading-7 text-[rgba(237,226,197,0.68)]">
+                      Abaixo esta o TXT oficial que a sessao da etapa esta recebendo em tempo real.
+                    </div>
+                  )
+                ) : isLoadingSavedTranscripts ? (
                   <p className="text-sm text-[rgba(237,226,197,0.72)]">Carregando transcricoes...</p>
                 ) : savedTranscripts.length === 0 ? (
                   <div className="rounded-[1.2rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-5 text-sm leading-7 text-[rgba(237,226,197,0.68)]">
@@ -5755,8 +6070,11 @@ export function LiveLabPage({
 
               <div className="mt-5 rounded-[1.5rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(2,10,7,0.95)] p-4">
                 <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap break-words text-sm leading-7 text-[rgba(237,226,197,0.76)]">
-                  {savedTranscripts.find((item) => item.id === selectedTranscriptId)?.content ??
-                    "Selecione um TXT salvo para visualizar a transcricao completa da sessao."}
+                  {integratedMode
+                    ? officialStageTranscriptContent ||
+                      "Ainda nao existe conteudo suficiente no TXT oficial da etapa vinculada."
+                    : savedTranscripts.find((item) => item.id === selectedTranscriptId)?.content ??
+                      "Selecione um TXT salvo para visualizar a transcricao completa da sessao."}
                 </pre>
               </div>
             </div>
