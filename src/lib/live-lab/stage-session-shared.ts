@@ -22,6 +22,17 @@ export type StoredStageTransmissionPayload = {
   connectionStatus?: string | null;
   eventCount?: number;
   lastCommand?: string | null;
+  commandEngineLabel?: string | null;
+  activeHandTitle?: string | null;
+  activeHandStartedAt?: string | null;
+  recentCompletedHandTitle?: string | null;
+  recentCompletedHandEndedAt?: string | null;
+  recentTranscriptEntries?: Array<{
+    id?: string;
+    at?: string;
+    text?: string;
+    command?: string | null;
+  }> | null;
   updatedAt?: string;
 };
 
@@ -65,6 +76,21 @@ export function normalizeStoredStageTransmissionPayload(
     connectionStatus: payload.connectionStatus ?? null,
     eventCount: Math.max(payload.eventCount ?? 0, 0),
     lastCommand: payload.lastCommand ?? null,
+    commandEngineLabel: payload.commandEngineLabel ?? null,
+    activeHandTitle: payload.activeHandTitle ?? null,
+    activeHandStartedAt: payload.activeHandStartedAt ?? null,
+    recentCompletedHandTitle: payload.recentCompletedHandTitle ?? null,
+    recentCompletedHandEndedAt: payload.recentCompletedHandEndedAt ?? null,
+    recentTranscriptEntries:
+      payload.recentTranscriptEntries
+        ?.map((entry) => ({
+          id: entry.id ?? undefined,
+          at: entry.at ?? undefined,
+          text: entry.text ?? "",
+          command: entry.command ?? null,
+        }))
+        .filter((entry) => entry.text.length > 0)
+        .slice(0, 24) ?? [],
     updatedAt: payload.updatedAt ?? undefined,
   };
 }
@@ -94,4 +120,3 @@ export function normalizeStoredStageSessionPayload(
     updatedAt: payload.updatedAt ?? undefined,
   };
 }
-

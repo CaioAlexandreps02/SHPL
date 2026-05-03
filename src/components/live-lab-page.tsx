@@ -212,6 +212,12 @@ type LiveRemoteMessage =
       captureStatus: CaptureStatus;
       liveSessionStatus: LiveSessionStatus;
       error: string;
+      commandEngineLabel?: string | null;
+      activeHandTitle?: string | null;
+      activeHandStartedAt?: string | null;
+      recentCompletedHandTitle?: string | null;
+      recentCompletedHandEndedAt?: string | null;
+      recentTranscriptEntries?: TranscriptEntry[];
     }
   | {
       type: "command";
@@ -404,6 +410,8 @@ export function LiveLabPage({
   const recentCompletedHandRef = useRef<CompletedHandSession | null>(null);
   const autoFinalizeHandTimeoutRef = useRef<number | null>(null);
   const autoStartNextHandTimeoutRef = useRef<number | null>(null);
+  const stageTranscriptFlushTimeoutRef = useRef<number | null>(null);
+  const syncedStageTranscriptLineCountRef = useRef(0);
   const liveHandTrackerRef = useRef<LiveHandTrackerState>({
     lastStreet: null,
     lastPlayerCountHint: null,
@@ -457,6 +465,8 @@ export function LiveLabPage({
   const [isTranscriptFeedExpanded, setIsTranscriptFeedExpanded] = useState(false);
   const [activeHandTitle, setActiveHandTitle] = useState("");
   const [activeHandStartedAtIso, setActiveHandStartedAtIso] = useState("");
+  const [recentCompletedHandTitle, setRecentCompletedHandTitle] = useState("");
+  const [recentCompletedHandEndedAtIso, setRecentCompletedHandEndedAtIso] = useState("");
   const [savedVideos, setSavedVideos] = useState<SavedHandClipSummary[]>([]);
   const [isLoadingSavedVideos, setIsLoadingSavedVideos] = useState(true);
   const [selectedVideoId, setSelectedVideoId] = useState("");
@@ -703,9 +713,32 @@ export function LiveLabPage({
         captureStatus: overrides?.captureStatus ?? captureStatus,
         liveSessionStatus: overrides?.liveSessionStatus ?? liveSessionStatus,
         error: overrides?.error ?? error,
+        commandEngineLabel:
+          overrides?.commandEngineLabel ?? commandEngineLabel ?? "Aguardando sessao",
+        activeHandTitle: overrides?.activeHandTitle ?? activeHandTitle ?? null,
+        activeHandStartedAt: overrides?.activeHandStartedAt ?? activeHandStartedAtIso ?? null,
+        recentCompletedHandTitle:
+          overrides?.recentCompletedHandTitle ?? recentCompletedHandTitle ?? null,
+        recentCompletedHandEndedAt:
+          overrides?.recentCompletedHandEndedAt ?? recentCompletedHandEndedAtIso ?? null,
+        recentTranscriptEntries:
+          overrides?.recentTranscriptEntries ?? transcriptFeed.slice(0, 24),
       });
     },
-    [canPublishCapture, captureStatus, deviceRole, error, integratedMode, liveSessionStatus],
+    [
+      activeHandStartedAtIso,
+      activeHandTitle,
+      canPublishCapture,
+      captureStatus,
+      commandEngineLabel,
+      deviceRole,
+      error,
+      integratedMode,
+      liveSessionStatus,
+      recentCompletedHandEndedAtIso,
+      recentCompletedHandTitle,
+      transcriptFeed,
+    ],
   );
 
   function buildRemoteStatusLabel(
@@ -1069,6 +1102,22 @@ export function LiveLabPage({
         eventCount: overrides?.transmission?.eventCount ?? transcriptFeed.length,
         lastCommand:
           overrides?.transmission?.lastCommand ?? transcriptFeed[0]?.text ?? null,
+        commandEngineLabel:
+          overrides?.transmission?.commandEngineLabel ?? commandEngineLabel ?? null,
+        activeHandTitle:
+          overrides?.transmission?.activeHandTitle ?? activeHandTitle ?? null,
+        activeHandStartedAt:
+          overrides?.transmission?.activeHandStartedAt ?? activeHandStartedAtIso ?? null,
+        recentCompletedHandTitle:
+          overrides?.transmission?.recentCompletedHandTitle ??
+          recentCompletedHandTitle ??
+          null,
+        recentCompletedHandEndedAt:
+          overrides?.transmission?.recentCompletedHandEndedAt ??
+          recentCompletedHandEndedAtIso ??
+          null,
+        recentTranscriptEntries:
+          overrides?.transmission?.recentTranscriptEntries ?? transcriptFeed.slice(0, 24),
         updatedAt: new Date().toISOString(),
       };
 
@@ -1105,6 +1154,8 @@ export function LiveLabPage({
       }
     },
     [
+      activeHandStartedAtIso,
+      activeHandTitle,
       captureStatus,
       hasFinishedSession,
       integratedSessionRole,
@@ -1112,9 +1163,64 @@ export function LiveLabPage({
       linkedStageOption,
       liveSessionStatus,
       remoteBridgeStatus,
+      recentCompletedHandEndedAtIso,
+      recentCompletedHandTitle,
       transcriptFeed,
+      commandEngineLabel,
     ],
   );
+  const hydrateTransmissionSnapshotFromStageSession = useCallback(async () => {
+    const stageId = linkedStageContext?.stageId ?? linkedStageOption?.stageId;
+
+    if (!stageId || deviceRole !== "monitor") {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/shpl-admin/stage-session?stageId=${encodeURIComponent(stageId)}`,
+      );
+      const data = (await response.json()) as {
+        session?: { transmission?: StoredStageTransmissionPayload | null } | null;
+      };
+      const transmission = data.session?.transmission;
+
+      if (!transmission) {
+        return;
+      }
+
+      setCaptureStatus(transmission.captureStatus ?? "idle");
+      setLiveSessionStatus(transmission.liveSessionStatus ?? "idle");
+      liveSessionStatusRef.current = transmission.liveSessionStatus ?? "idle";
+      setRemoteBridgeStatus(
+        buildRemoteStatusLabel(
+          transmission.captureStatus === "preview" ? "preview" : "idle",
+          transmission.liveSessionStatus === "running" || transmission.liveSessionStatus === "paused"
+            ? transmission.liveSessionStatus
+            : "idle",
+        ),
+      );
+      setCommandEngineLabel(transmission.commandEngineLabel ?? "Aguardando sessao");
+      setActiveHandTitle(transmission.activeHandTitle ?? "");
+      setActiveHandStartedAtIso(transmission.activeHandStartedAt ?? "");
+      setRecentCompletedHandTitle(transmission.recentCompletedHandTitle ?? "");
+      setRecentCompletedHandEndedAtIso(transmission.recentCompletedHandEndedAt ?? "");
+      setTranscriptFeed(
+        (transmission.recentTranscriptEntries ?? []).map((entry) => ({
+          id:
+            entry.id ??
+            `tx-stage-${entry.at ?? Date.now().toString()}-${Math.random().toString(36).slice(2, 8)}`,
+          at: entry.at ?? new Date().toISOString(),
+          text: entry.text ?? "",
+          command: entry.command === "start" || entry.command === "end" || entry.command === "save"
+            ? entry.command
+            : "none",
+        })),
+      );
+    } catch {
+      // O monitor continua operando apenas com o canal realtime se a hidratacao inicial falhar.
+    }
+  }, [deviceRole, linkedStageContext, linkedStageOption]);
 
   const loadDevices = useCallback(async () => {
     try {
@@ -1350,6 +1456,16 @@ export function LiveLabPage({
           setCaptureStatus(payload.captureStatus);
           setLiveSessionStatus(payload.liveSessionStatus);
           liveSessionStatusRef.current = payload.liveSessionStatus;
+          if (payload.commandEngineLabel) {
+            setCommandEngineLabel(payload.commandEngineLabel);
+          }
+          setActiveHandTitle(payload.activeHandTitle ?? "");
+          setActiveHandStartedAtIso(payload.activeHandStartedAt ?? "");
+          setRecentCompletedHandTitle(payload.recentCompletedHandTitle ?? "");
+          setRecentCompletedHandEndedAtIso(payload.recentCompletedHandEndedAt ?? "");
+          if (payload.recentTranscriptEntries) {
+            setTranscriptFeed(payload.recentTranscriptEntries);
+          }
           setRemoteBridgeStatus(
             payload.error
               ? `Fonte reportou erro: ${payload.error}`
@@ -1465,7 +1581,28 @@ export function LiveLabPage({
     }
 
     void broadcastIntegratedState();
-  }, [broadcastIntegratedState, canPublishCapture, captureStatus, error, integratedMode, liveSessionStatus]);
+  }, [
+    broadcastIntegratedState,
+    canPublishCapture,
+    captureStatus,
+    commandEngineLabel,
+    error,
+    integratedMode,
+    liveSessionStatus,
+    activeHandStartedAtIso,
+    activeHandTitle,
+    recentCompletedHandEndedAtIso,
+    recentCompletedHandTitle,
+    transcriptFeed,
+  ]);
+
+  useEffect(() => {
+    if (!integratedMode || deviceRole !== "monitor") {
+      return;
+    }
+
+    void hydrateTransmissionSnapshotFromStageSession();
+  }, [deviceRole, hydrateTransmissionSnapshotFromStageSession, integratedMode]);
 
   useEffect(() => {
     if (!integratedMode || !canPublishCapture || captureStatus !== "preview") {
@@ -1634,7 +1771,7 @@ export function LiveLabPage({
 
       appendSessionTranscriptLine(`Sistema: Lugar ${seat.seatIndex + 1} ficou vazio`);
     });
-  }, [integratedMode, linkedStageContext]);
+  }, [integratedMode, linkedStageContext]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!integratedMode || !linkedStageOption) {
@@ -1649,6 +1786,8 @@ export function LiveLabPage({
       window.clearTimeout(timeoutId);
     };
   }, [
+    activeHandStartedAtIso,
+    activeHandTitle,
     captureStatus,
     deviceRole,
     hasFinishedSession,
@@ -1657,9 +1796,17 @@ export function LiveLabPage({
     linkedStageOption,
     liveSessionStatus,
     remoteBridgeStatus,
+    recentCompletedHandEndedAtIso,
+    recentCompletedHandTitle,
     syncLinkedStageSession,
     transcriptFeed,
   ]);
+
+  useEffect(() => {
+    return () => {
+      clearStageTranscriptFlushTimeout();
+    };
+  }, []);
 
   useEffect(() => {
     if (
@@ -2436,8 +2583,14 @@ export function LiveLabPage({
         error: "",
       });
       setTranscriptFeed([]);
+      setActiveHandTitle("");
+      setActiveHandStartedAtIso("");
+      setRecentCompletedHandTitle("");
+      setRecentCompletedHandEndedAtIso("");
       sessionTranscriptStartedAtRef.current = new Date().toISOString();
       sessionTranscriptLinesRef.current = [];
+      syncedStageTranscriptLineCountRef.current = 0;
+      clearStageTranscriptFlushTimeout();
       recentTranscriptSignaturesRef.current = [];
       recentCompletedHandRef.current = null;
       resetLiveHandTracker();
@@ -2593,6 +2746,8 @@ export function LiveLabPage({
 
     completedHand.saved = true;
     recentCompletedHandRef.current = completedHand;
+    setRecentCompletedHandTitle(completedHand.title);
+    setRecentCompletedHandEndedAtIso(completedHand.endedAt);
     await refreshSavedVideos();
   }
 
@@ -2680,11 +2835,53 @@ export function LiveLabPage({
     };
   }
 
+  function clearStageTranscriptFlushTimeout() {
+    if (stageTranscriptFlushTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(stageTranscriptFlushTimeoutRef.current);
+    }
+
+    stageTranscriptFlushTimeoutRef.current = null;
+  }
+
+  async function flushPendingStageTranscriptLines() {
+    const lines = sessionTranscriptLinesRef.current;
+
+    if (lines.length === 0) {
+      return;
+    }
+
+    const nextEntries = lines.slice(syncedStageTranscriptLineCountRef.current);
+
+    if (nextEntries.length === 0) {
+      return;
+    }
+
+    await appendLinkedStageLogEntries(nextEntries);
+    syncedStageTranscriptLineCountRef.current += nextEntries.length;
+  }
+
+  function scheduleStageTranscriptFlush(delayMs = 1200) {
+    clearStageTranscriptFlushTimeout();
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    stageTranscriptFlushTimeoutRef.current = window.setTimeout(() => {
+      stageTranscriptFlushTimeoutRef.current = null;
+      void flushPendingStageTranscriptLines();
+    }, delayMs);
+  }
+
   function appendSessionTranscriptLine(content: string) {
     sessionTranscriptLinesRef.current = [
       ...sessionTranscriptLinesRef.current,
       `[${formatTimeOnly(new Date().toISOString())}] ${content}`,
     ];
+
+    if (typeof window !== "undefined") {
+      scheduleStageTranscriptFlush();
+    }
   }
 
   async function stopLiveSession(options: { restartBoardMonitor?: boolean } = {}) {
@@ -2718,6 +2915,8 @@ export function LiveLabPage({
       });
     }
 
+    clearStageTranscriptFlushTimeout();
+    await flushPendingStageTranscriptLines();
     await persistCurrentSessionTranscript();
 
     if (
@@ -2909,6 +3108,8 @@ export function LiveLabPage({
     liveHandTrackerRef.current.lastUsefulTranscriptAt = Date.now();
     setActiveHandTitle(title);
     setActiveHandStartedAtIso(new Date().toISOString());
+    setRecentCompletedHandTitle("");
+    setRecentCompletedHandEndedAtIso("");
   }
 
   async function finalizeCurrentHand(
@@ -2976,11 +3177,15 @@ export function LiveLabPage({
         appendSessionTranscriptLine("Sistema: mao finalizada e salva automaticamente");
       } else if (allowRecentSave) {
         recentCompletedHandRef.current = completedHand;
+        setRecentCompletedHandTitle(completedHand.title);
+        setRecentCompletedHandEndedAtIso(completedHand.endedAt);
         appendSessionTranscriptLine(
           `Sistema: mao finalizada e aguardando comando de salvar por ate ${Math.round(RECENT_COMPLETED_HAND_SAVE_WINDOW_MS / 1000)} segundos`,
         );
       } else {
         recentCompletedHandRef.current = null;
+        setRecentCompletedHandTitle("");
+        setRecentCompletedHandEndedAtIso("");
       }
 
       handCounterRef.current += 1;
@@ -2988,6 +3193,8 @@ export function LiveLabPage({
         window.setTimeout(() => {
           if (recentCompletedHandRef.current?.id === completedHand.id && !completedHand.saved) {
             recentCompletedHandRef.current = null;
+            setRecentCompletedHandTitle("");
+            setRecentCompletedHandEndedAtIso("");
           }
         }, RECENT_COMPLETED_HAND_SAVE_WINDOW_MS);
       }
@@ -4317,15 +4524,9 @@ export function LiveLabPage({
       linkedBlindLabel: linkedStageContext?.currentBlindLabel ?? null,
     });
 
-    if (lines.length > 0) {
-      await appendLinkedStageLogEntries([
-        `[${formatDateTime(new Date().toISOString())}] Transcricao sincronizada com ${lines.length} linha(s).`,
-        ...lines,
-      ]);
-    }
-
     sessionTranscriptStartedAtRef.current = "";
     sessionTranscriptLinesRef.current = [];
+    syncedStageTranscriptLineCountRef.current = 0;
     await refreshSavedTranscripts();
   }
 
