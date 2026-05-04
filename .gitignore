@@ -27,6 +27,7 @@
 tmp-dev-*.log
 tmp-dev-*.pid
 build-full.log
+temp-regulamento.pdf
 
 # misc
 .DS_Store

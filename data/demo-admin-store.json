@@ -1,16 +1,6 @@
 {
   "players": [
     {
-      "id": "p2",
-      "fullName": "Alisson",
-      "nickname": "Alisson",
-      "active": true,
-      "birthDate": "",
-      "email": "",
-      "status": "Ativo",
-      "extraRoles": []
-    },
-    {
       "id": "p1",
       "fullName": "Caio Alexandre",
       "nickname": "Caio",
@@ -21,6 +11,16 @@
       "extraRoles": [
         "Administrador"
       ]
+    },
+    {
+      "id": "p2",
+      "fullName": "Alisson",
+      "nickname": "Alisson",
+      "active": true,
+      "birthDate": "",
+      "email": "",
+      "status": "Ativo",
+      "extraRoles": []
     },
     {
       "id": "p3",
@@ -43,9 +43,9 @@
       "extraRoles": []
     },
     {
-      "id": "p7",
-      "fullName": "Rhuan",
-      "nickname": "Rhuan",
+      "id": "p5",
+      "fullName": "Thiago",
+      "nickname": "Thiago",
       "active": true,
       "birthDate": "",
       "email": "",
@@ -63,13 +63,53 @@
       "extraRoles": []
     },
     {
-      "id": "p5",
-      "fullName": "Thiago",
-      "nickname": "Thiago",
+      "id": "p7",
+      "fullName": "Rhuan",
+      "nickname": "Rhuan",
       "active": true,
       "birthDate": "",
       "email": "",
       "status": "Ativo",
+      "extraRoles": []
+    },
+    {
+      "id": "p8",
+      "fullName": "Henrique",
+      "nickname": "Henrique",
+      "active": true,
+      "birthDate": "",
+      "email": "",
+      "status": "Novo cadastro",
+      "extraRoles": []
+    },
+    {
+      "id": "p9",
+      "fullName": "Cadu",
+      "nickname": "Cadu",
+      "active": true,
+      "birthDate": "",
+      "email": "",
+      "status": "Novo cadastro",
+      "extraRoles": []
+    },
+    {
+      "id": "p10",
+      "fullName": "Estrela",
+      "nickname": "Estrela",
+      "active": true,
+      "birthDate": "",
+      "email": "",
+      "status": "Novo cadastro",
+      "extraRoles": []
+    },
+    {
+      "id": "p11",
+      "fullName": "Diol",
+      "nickname": "Diol",
+      "active": true,
+      "birthDate": "",
+      "email": "",
+      "status": "Novo cadastro",
       "extraRoles": []
     }
   ],
@@ -117,9 +157,9 @@
     {
       "id": "stage-05",
       "title": "Etapa 05",
-      "stageDate": "2026-05-17",
-      "status": "scheduled",
-      "scheduledStartTime": "20:00",
+      "stageDate": "2026-05-03",
+      "status": "finished",
+      "scheduledStartTime": "18:00",
       "isTest": false
     },
     {

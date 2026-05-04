@@ -54,6 +54,12 @@ export const shplNavItems: SHPLNavItem[] = [
     access: "all",
   },
   {
+    href: "/shpl-2026/regulamento",
+    label: "Regulamento",
+    icon: "L",
+    access: "all",
+  },
+  {
     href: "/shpl-2026/configuracoes",
     label: "Configuracoes",
     icon: "C",
