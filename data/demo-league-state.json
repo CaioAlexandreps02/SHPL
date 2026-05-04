@@ -2,28 +2,28 @@
   "annualRankingStats": [
     {
       "playerId": "p1",
-      "points": 32,
+      "points": 27,
       "wins": 2,
       "secondPlaces": 2,
       "thirdPlaces": 0
     },
     {
       "playerId": "p2",
-      "points": 34,
+      "points": 37,
       "wins": 2,
       "secondPlaces": 2,
       "thirdPlaces": 0
     },
     {
       "playerId": "p3",
-      "points": 30,
+      "points": 23,
       "wins": 1,
       "secondPlaces": 2,
       "thirdPlaces": 2
     },
     {
       "playerId": "p4",
-      "points": 17,
+      "points": 18,
       "wins": 0,
       "secondPlaces": 1,
       "thirdPlaces": 1
@@ -37,14 +37,14 @@
     },
     {
       "playerId": "p6",
-      "points": 6,
+      "points": 4,
       "wins": 0,
       "secondPlaces": 0,
       "thirdPlaces": 0
     },
     {
       "playerId": "p7",
-      "points": 7,
+      "points": 14,
       "wins": 0,
       "secondPlaces": 0,
       "thirdPlaces": 1
@@ -90,7 +90,7 @@
         "p3": 7,
         "p4": 0,
         "p5": 0,
-        "p6": 3,
+        "p6": 1,
         "p7": 1,
         "p8": 0,
         "p9": 0,
@@ -104,13 +104,13 @@
       "stageDateLabel": "04 de fevereiro de 2026",
       "stageDateShortLabel": "04/02",
       "pointsByPlayer": {
-        "p1": 10,
+        "p1": 7,
         "p2": 7,
         "p3": 5,
-        "p4": 7,
+        "p4": 3,
         "p5": 0,
-        "p6": 0,
-        "p7": 0,
+        "p6": 1,
+        "p7": 1,
         "p8": 0,
         "p9": 0,
         "p10": 0,
@@ -123,13 +123,13 @@
       "stageDateLabel": "10 de marco de 2026",
       "stageDateShortLabel": "10/03",
       "pointsByPlayer": {
-        "p1": 7,
+        "p1": 5,
         "p2": 10,
-        "p3": 5,
+        "p3": 3,
         "p4": 3,
         "p5": 3,
-        "p6": 0,
-        "p7": 0,
+        "p6": 1,
+        "p7": 2,
         "p8": 0,
         "p9": 0,
         "p10": 0,
@@ -143,12 +143,12 @@
       "stageDateShortLabel": "15/07",
       "pointsByPlayer": {
         "p1": 10,
-        "p2": 7,
-        "p3": 5,
-        "p4": 3,
+        "p2": 10,
+        "p3": 0,
+        "p4": 8,
         "p5": 0,
-        "p6": 3,
-        "p7": 0,
+        "p6": 1,
+        "p7": 4,
         "p8": 0,
         "p9": 0,
         "p10": 0,
