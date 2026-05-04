@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { getDemoUserPhotoMap } from "@/lib/auth/demo-users";
 import { getStoredPlayers, getStoredStages, saveStoredStage } from "@/lib/data/demo-admin-store";
 import { createMockSnapshot } from "@/lib/data/mock";
@@ -82,7 +85,15 @@ function buildDefaultState(): DemoLeagueStateData {
 }
 
 async function readState() {
-  return readServerJsonDocument(stateDocumentName, buildDefaultState);
+  const parsed = await readServerJsonDocument(stateDocumentName, buildDefaultState);
+  const bundledSeed = await readBundledLeagueStateSeed();
+  const mergedState = mergeLeagueStates(parsed, bundledSeed);
+
+  if (JSON.stringify(mergedState) !== JSON.stringify(parsed)) {
+    await writeServerJsonDocument(stateDocumentName, mergedState);
+  }
+
+  return mergedState;
 }
 
 async function writeState(data: DemoLeagueStateData) {
@@ -957,4 +968,47 @@ function sortStageHistoryByDate(
   return [...stageHistoryDetails].sort((left, right) =>
     (dateMap.get(left.stageId) ?? "").localeCompare(dateMap.get(right.stageId) ?? "")
   );
+}
+
+async function readBundledLeagueStateSeed(): Promise<DemoLeagueStateData> {
+  const bundledPath = path.join(process.cwd(), "data", stateDocumentName);
+
+  try {
+    const raw = await readFile(bundledPath, "utf8");
+    return JSON.parse(raw) as DemoLeagueStateData;
+  } catch {
+    return buildDefaultState();
+  }
+}
+
+function mergeLeagueStates(
+  current: DemoLeagueStateData,
+  bundled: DemoLeagueStateData,
+): DemoLeagueStateData {
+  return {
+    annualRankingStats: mergeByKey(current.annualRankingStats, bundled.annualRankingStats, (entry) => entry.playerId),
+    annualStagePoints: mergeByKey(current.annualStagePoints, bundled.annualStagePoints, (entry) => entry.stageId),
+    stageMatchPoints: mergeByKey(current.stageMatchPoints, bundled.stageMatchPoints, (entry) => entry.stageId),
+    history: mergeByKey(current.history, bundled.history, (entry) => entry.id),
+    stageHistoryDetails: mergeByKey(
+      current.stageHistoryDetails,
+      bundled.stageHistoryDetails,
+      (entry) => entry.stageId,
+    ),
+    annualPotCents: bundled.annualPotCents || current.annualPotCents,
+  };
+}
+
+function mergeByKey<T>(
+  current: T[],
+  bundled: T[],
+  getKey: (entry: T) => string,
+) {
+  const map = new Map(current.map((entry) => [getKey(entry), entry]));
+
+  for (const bundledEntry of bundled) {
+    map.set(getKey(bundledEntry), bundledEntry);
+  }
+
+  return Array.from(map.values());
 }

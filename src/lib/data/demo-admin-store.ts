@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { createMockSnapshot } from "@/lib/data/mock";
 import {
   readServerJsonDocument,
@@ -112,14 +115,16 @@ function normalizeStoredPlayer(player: StoredPlayerRecord) {
 
 async function readStore() {
   const parsed = await readServerJsonDocument(adminStoreDocumentName, buildDefaultAdminStore);
-  const normalizedPlayers = parsed.players.map(normalizeStoredPlayer);
+  const bundledSeed = await readBundledAdminSeed();
+  const mergedStore = mergeAdminStores(parsed, bundledSeed);
+  const normalizedPlayers = mergedStore.players.map(normalizeStoredPlayer);
   const didChangePlayers = JSON.stringify(normalizedPlayers) !== JSON.stringify(parsed.players);
-  const normalizedStages = normalizeStoredStages(parsed.stages);
+  const normalizedStages = normalizeStoredStages(mergedStore.stages);
   const didChangeStages = JSON.stringify(normalizedStages) !== JSON.stringify(parsed.stages);
 
   if (didChangePlayers || didChangeStages) {
     await writeServerJsonDocument(adminStoreDocumentName, {
-      ...parsed,
+      ...mergedStore,
       players: normalizedPlayers,
       stages: normalizedStages,
     });
@@ -303,4 +308,49 @@ function normalizeStoredStages(stages: StoredStageRecord[]) {
 function normalizeStageStartTime(value?: string) {
   const trimmed = value?.trim();
   return trimmed && /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : DEFAULT_STAGE_START_TIME;
+}
+
+async function readBundledAdminSeed(): Promise<AdminStoreData> {
+  const bundledPath = path.join(process.cwd(), "data", adminStoreDocumentName);
+
+  try {
+    const raw = await readFile(bundledPath, "utf8");
+    return JSON.parse(raw) as AdminStoreData;
+  } catch {
+    return buildDefaultAdminStore();
+  }
+}
+
+function mergeAdminStores(current: AdminStoreData, bundled: AdminStoreData): AdminStoreData {
+  const playerById = new Map(current.players.map((player) => [player.id, player]));
+
+  for (const bundledPlayer of bundled.players) {
+    const currentPlayer = playerById.get(bundledPlayer.id);
+    playerById.set(
+      bundledPlayer.id,
+      currentPlayer
+        ? {
+            ...currentPlayer,
+            ...bundledPlayer,
+            extraRoles: Array.from(
+              new Set([...(currentPlayer.extraRoles ?? []), ...(bundledPlayer.extraRoles ?? [])]),
+            ),
+          }
+        : bundledPlayer,
+    );
+  }
+
+  const stageById = new Map(current.stages.map((stage) => [stage.id, stage]));
+
+  for (const bundledStage of bundled.stages) {
+    stageById.set(bundledStage.id, {
+      ...(stageById.get(bundledStage.id) ?? {}),
+      ...bundledStage,
+    });
+  }
+
+  return {
+    players: Array.from(playerById.values()),
+    stages: Array.from(stageById.values()),
+  };
 }
