@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getUserAccessFromCookieHeader, isAdmin } from "@/lib/auth/access";
 import {
   deleteStoredStage,
   getStoredStages,
@@ -12,6 +13,15 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const access = await getUserAccessFromCookieHeader(request.headers.get("cookie") ?? "");
+
+  if (!isAdmin(access)) {
+    return NextResponse.json(
+      { error: "Apenas administradores podem criar ou editar etapas." },
+      { status: 403 }
+    );
+  }
+
   try {
     const payload = await request.json();
     const stage = await saveStoredStage(payload);
@@ -25,6 +35,15 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const access = await getUserAccessFromCookieHeader(request.headers.get("cookie") ?? "");
+
+  if (!isAdmin(access)) {
+    return NextResponse.json(
+      { error: "Apenas administradores podem excluir etapas." },
+      { status: 403 }
+    );
+  }
+
   try {
     const { stageId } = (await request.json()) as { stageId?: string };
 

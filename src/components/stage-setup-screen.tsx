@@ -65,6 +65,7 @@ export function StageSetupScreen({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const isAdminUser = roles.includes("Administrador");
   const [blindLevels, setBlindLevels] = useState<BlindLevel[]>(snapshot.blindStructure);
   const [clockSeconds, setClockSeconds] = useState(
     snapshot.liveControls.actionClockOptions[1] ?? snapshot.liveControls.actionClockOptions[0] ?? 30
@@ -2596,10 +2597,12 @@ export function StageSetupScreen({
               Isso vai travar a operacao da etapa atual. Use essa confirmacao somente quando todas as partidas do dia ja tiverem sido concluidas.
             </p>
 
-            <div className="mt-5 rounded-[1.1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(7,24,18,0.56)] p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
-                Premiacao do dia
-              </p>
+            {isAdminUser && (
+              <>
+                <div className="mt-5 rounded-[1.1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(7,24,18,0.56)] p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                    Premiacao do dia
+                  </p>
               <p className="mt-1 text-sm text-[rgba(236,225,196,0.62)]">
                 Calculado: R${" "}
                 {(calculatedDailyPrize / 100).toLocaleString("pt-BR", {
@@ -2747,6 +2750,7 @@ export function StageSetupScreen({
                 )}
               </div>
             )}
+            </>)}
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button

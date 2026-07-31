@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { canManageTable, getUserAccessFromCookieHeader } from "@/lib/auth/access";
+import { getUserAccessFromCookieHeader, canManageTable, isAdmin } from "@/lib/auth/access";
 import {
   finalizeStage,
   type FinalizeStageInput,
@@ -113,6 +113,18 @@ export async function POST(request: Request) {
     const overrideIncludeInAnnual = isBoolean(payload.overrideIncludeInAnnual)
       ? payload.overrideIncludeInAnnual
       : undefined;
+
+    const hasOverrides =
+      overrideDailyPrizeCents != null ||
+      overrideAnnualContributionCents != null ||
+      overrideIncludeInAnnual != null;
+
+    if (hasOverrides && !isAdmin(access)) {
+      return NextResponse.json(
+        { error: "Apenas administradores podem usar overrides na finalizacao da etapa." },
+        { status: 403 }
+      );
+    }
 
     const actualStageStartedAt = isString(payload.actualStageStartedAt) ? payload.actualStageStartedAt : null;
 

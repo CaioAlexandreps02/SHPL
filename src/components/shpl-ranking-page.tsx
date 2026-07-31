@@ -20,6 +20,7 @@ export function SHPLRankingPage({
   return (
     <div className="grid gap-5">
       <SHPLAnnualClassification
+        canEdit={canEditStageRanking}
         description="Acompanhe o ranking anual por etapa e a soma total acumulada da temporada."
         snapshot={snapshot}
         title="Ranking Anual"

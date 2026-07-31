@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { canManageTable, getUserAccessFromCookieHeader } from "@/lib/auth/access";
+import { getUserAccessFromCookieHeader, isAdmin } from "@/lib/auth/access";
 import {
   updateAnnualRankingStats,
   type UpdateAnnualRankingInput,
@@ -17,9 +17,9 @@ function isFiniteNumber(value: unknown): value is number {
 export async function PATCH(request: Request) {
   const access = await getUserAccessFromCookieHeader(request.headers.get("cookie") ?? "");
 
-  if (!canManageTable(access)) {
+  if (!isAdmin(access)) {
     return NextResponse.json(
-      { error: "Apenas dealer e administrador podem editar o ranking anual." },
+      { error: "Apenas administradores podem editar o ranking anual." },
       { status: 403 }
     );
   }

@@ -33,10 +33,12 @@ const inputClassName =
 
 export function SHPLAnnualClassification({
   snapshot,
+  canEdit = false,
   title = "Classificacao Anual",
   description = "Acompanhe a pontuacao de cada jogador por etapa e a soma total acumulada da temporada.",
 }: {
   snapshot: LeagueSnapshot;
+  canEdit?: boolean;
   title?: string;
   description?: string;
 }) {
@@ -144,9 +146,10 @@ export function SHPLAnnualClassification({
         />
       </div>
 
-      <div className="mt-5 flex items-center justify-between">
-        <div className="flex-1" />
-        {isEditing ? (
+      {canEdit && (
+        <div className="mt-5 flex items-center justify-between">
+          <div className="flex-1" />
+          {isEditing ? (
           <div className="flex gap-2">
             <button
               className="h-9 rounded-[0.85rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-4 text-xs font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
@@ -173,7 +176,8 @@ export function SHPLAnnualClassification({
             Editar ranking
           </button>
         )}
-      </div>
+        </div>
+      )}
 
       {notice ? (
         <div className="mt-3 rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(255,183,32,0.08)] px-4 py-3 text-sm text-[rgba(255,236,184,0.92)]">

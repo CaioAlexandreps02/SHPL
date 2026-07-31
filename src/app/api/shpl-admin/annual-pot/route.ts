@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { canManageTable, getUserAccessFromCookieHeader } from "@/lib/auth/access";
+import { getUserAccessFromCookieHeader, isAdmin } from "@/lib/auth/access";
 import {
   calculateAnnualPotBreakdown,
   getAnnualPotBreakdown,
@@ -21,9 +21,9 @@ export async function GET() {
   const h = await headers();
   const access = await getUserAccessFromCookieHeader(h.get("cookie") ?? "");
 
-  if (!canManageTable(access)) {
+  if (!isAdmin(access)) {
     return NextResponse.json(
-      { error: "Apenas dealer e administrador podem consultar o pote anual." },
+      { error: "Apenas administradores podem consultar o pote anual." },
       { status: 403 },
     );
   }
@@ -35,9 +35,9 @@ export async function GET() {
 export async function POST(request: Request) {
   const access = await getUserAccessFromCookieHeader(request.headers.get("cookie") ?? "");
 
-  if (!canManageTable(access)) {
+  if (!isAdmin(access)) {
     return NextResponse.json(
-      { error: "Apenas dealer e administrador podem ajustar o pote anual." },
+      { error: "Apenas administradores podem ajustar o pote anual." },
       { status: 403 },
     );
   }
