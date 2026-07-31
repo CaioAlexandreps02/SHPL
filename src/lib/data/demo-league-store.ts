@@ -44,6 +44,7 @@ export type FinalizeStagePlayerPayload = {
   dailyPaid: boolean;
   leftStage: boolean;
   matchPoints: number[];
+  receivesAnnualPoint?: boolean;
 };
 
 export type FinalizeStoredStageInput = {
@@ -271,7 +272,7 @@ export async function finalizeStoredStage(input: FinalizeStoredStageInput) {
           return [playerId, 0];
         }
 
-        return [playerId, calculateAnnualPoints(rankingEntry.position, player.leftStage)];
+        return [playerId, calculateAnnualPoints(rankingEntry.position, player.leftStage, player.receivesAnnualPoint)];
       })
     ),
   };
@@ -479,9 +480,9 @@ function buildTiebreakSummary(entry: StoredAnnualRankingStats) {
   return `${entry.wins} vitorias • ${entry.secondPlaces} segundos • ${entry.thirdPlaces} terceiros`;
 }
 
-function calculateAnnualPoints(position: number, leftStage: boolean) {
+function calculateAnnualPoints(position: number, leftStage: boolean, receivesAnnualPoint?: boolean) {
   if (leftStage) {
-    return 1;
+    return receivesAnnualPoint ? 1 : 0;
   }
 
   if (position === 1) {

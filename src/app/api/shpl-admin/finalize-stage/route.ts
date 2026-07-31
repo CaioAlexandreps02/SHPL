@@ -40,6 +40,7 @@ function parsePlayer(raw: unknown): FinalizeStagePlayerPayload | null {
     dailyPaid: candidate.dailyPaid,
     leftStage: candidate.leftStage,
     matchPoints: candidate.matchPoints,
+    receivesAnnualPoint: isBoolean(candidate.receivesAnnualPoint) ? candidate.receivesAnnualPoint : undefined,
   };
 }
 

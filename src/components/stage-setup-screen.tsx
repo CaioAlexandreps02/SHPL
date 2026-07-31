@@ -32,6 +32,7 @@ type StagePlayerControl = {
   outOfCurrentMatch: boolean;
   estimatedStack: number;
   matchPoints: number[];
+  receivesAnnualPoint?: boolean;
 };
 
 type PlayerActionSnapshot = {
@@ -89,6 +90,7 @@ export function StageSetupScreen({
   const [annualContributionOverride, setAnnualContributionOverride] = useState("");
   const [annualContributionOverrideNote, setAnnualContributionOverrideNote] = useState("");
   const [includeTestInAnnual, setIncludeTestInAnnual] = useState(false);
+  const [showLeaveStageConfirm, setShowLeaveStageConfirm] = useState(false);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [actionClockRemaining, setActionClockRemaining] = useState<number | null>(null);
   const [manualAdjustmentMatchIndex, setManualAdjustmentMatchIndex] = useState(0);
@@ -1376,7 +1378,9 @@ export function StageSetupScreen({
     }
   }
 
-  function handleLeaveStage() {
+  type StageExitPenalty = "keep_points" | "zero_with_annual" | "zero_without_annual";
+
+  function handleLeaveStage(penalty: StageExitPenalty) {
     if (!selectedPlayer || stageClosedAt) {
       return;
     }
@@ -1392,6 +1396,15 @@ export function StageSetupScreen({
           return player;
         }
 
+        if (penalty === "keep_points") {
+          return {
+            ...player,
+            leftStage: true,
+            outOfCurrentMatch: true,
+            estimatedStack: 0,
+          };
+        }
+
         const nextMatchPoints = player.matchPoints.map(() => 0);
         nextMatchPoints[currentMatchIndex] = 1;
 
@@ -1401,6 +1414,7 @@ export function StageSetupScreen({
           outOfCurrentMatch: true,
           estimatedStack: 0,
           matchPoints: nextMatchPoints,
+          receivesAnnualPoint: penalty === "zero_with_annual",
         };
       });
 
@@ -1444,17 +1458,26 @@ export function StageSetupScreen({
         formatStageEventLogEntry(`${winnerName} ficou automaticamente em primeiro lugar.`),
       ]);
       announceTableMessage(`${selectedPlayer.playerName} saiu da etapa. ${winnerName} ficou em primeiro lugar.`);
+      setShowLeaveStageConfirm(false);
       return;
     }
 
-    setStageNotice(`${selectedPlayer.playerName} saiu da etapa e teve a pontuacao ajustada para 1.`);
+    const penaltyLabel =
+      penalty === "keep_points"
+        ? "manteve os pontos"
+        : penalty === "zero_with_annual"
+          ? "teve a pontuacao zerada (com ponto anual)"
+          : "teve a pontuacao zerada (sem ponto anual)";
+
+    setStageNotice(`${selectedPlayer.playerName} saiu da etapa e ${penaltyLabel}.`);
     void appendStageLogEntries([
       formatStageEventLogEntry(`${selectedPlayer.playerName} saiu da etapa.`),
       formatStageEventLogEntry(
-        `${selectedPlayer.playerName} teve a pontuacao da etapa ajustada para 1 ponto.`
+        `${selectedPlayer.playerName} ${penaltyLabel}.`
       ),
     ]);
     announceTableMessage(`${selectedPlayer.playerName} saiu da etapa.`);
+    setShowLeaveStageConfirm(false);
   }
 
   function handleManualPlacementChange(playerId: string, nextValue: string) {
@@ -1634,6 +1657,7 @@ export function StageSetupScreen({
             dailyPaid: player.dailyPaid,
             leftStage: player.leftStage,
             matchPoints: player.matchPoints,
+            receivesAnnualPoint: player.receivesAnnualPoint,
           })),
           buyInAnnual: Number.parseInt(parsedSettings?.buyInAnnual ?? "0", 10) || 0,
           buyInDaily: Number.parseInt(parsedSettings?.buyInDaily ?? "0", 10) || 0,
@@ -2075,7 +2099,7 @@ export function StageSetupScreen({
                     <button className={compactActionButtonClassName} disabled={stageClosedAt !== null} onClick={handleConfirmBothBuyIns} type="button">
                       Buy-in dos dois
                     </button>
-                    <button className={compactActionButtonClassName} disabled={stageClosedAt !== null} onClick={handleLeaveStage} type="button">
+                    <button className={compactActionButtonClassName} disabled={stageClosedAt !== null} onClick={() => setShowLeaveStageConfirm(true)} type="button">
                       Sair da etapa
                     </button>
                     <button className={compactActionButtonClassName} disabled={!canMarkSelectedPlayerOut} onClick={handlePlayerOutFromMatch} type="button">
@@ -2403,6 +2427,78 @@ export function StageSetupScreen({
           >
             Fechar
           </button>
+        </div>
+      ) : null}
+
+      {showLeaveStageConfirm && selectedPlayer ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            className="absolute inset-0 bg-[rgba(0,0,0,0.56)]"
+            onClick={() => setShowLeaveStageConfirm(false)}
+            type="button"
+          />
+          <div className="relative z-10 w-full max-w-md rounded-[1.4rem] border border-[rgba(255,208,101,0.16)] bg-[linear-gradient(180deg,rgba(12,44,31,0.98),rgba(7,24,18,0.99))] p-5 shadow-[0_28px_60px_rgba(0,0,0,0.42)] md:p-6">
+            <p className="text-xs uppercase tracking-[0.22em] text-[rgba(236,225,196,0.48)]">
+              Saida da etapa
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold text-[rgba(255,244,214,0.96)]">
+              {selectedPlayer.playerName}
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-[rgba(236,225,196,0.72)]">
+              O que fazer com os pontos desta etapa?
+            </p>
+
+            <div className="mt-5 flex flex-col gap-3">
+              <button
+                className="w-full rounded-[0.95rem] border border-[rgba(236,225,196,0.12)] bg-[rgba(255,255,255,0.03)] p-4 text-left transition hover:bg-[rgba(255,255,255,0.05)]"
+                onClick={() => handleLeaveStage("keep_points")}
+                type="button"
+              >
+                <p className="text-sm font-semibold text-[rgba(255,244,214,0.96)]">
+                  Manter todos os pontos
+                </p>
+                <p className="mt-1 text-xs text-[rgba(236,225,196,0.56)]">
+                  O jogador mantem os pontos conquistados. Nao recebe pontos anuais.
+                </p>
+              </button>
+
+              <button
+                className="w-full rounded-[0.95rem] border border-[rgba(236,225,196,0.12)] bg-[rgba(255,255,255,0.03)] p-4 text-left transition hover:bg-[rgba(255,255,255,0.05)]"
+                onClick={() => handleLeaveStage("zero_with_annual")}
+                type="button"
+              >
+                <p className="text-sm font-semibold text-[rgba(255,244,214,0.96)]">
+                  Zerar pontos (padrao)
+                </p>
+                <p className="mt-1 text-xs text-[rgba(236,225,196,0.56)]">
+                  Todos os pontos da etapa sao zerados. Recebe 1 ponto no ranking anual.
+                </p>
+              </button>
+
+              <button
+                className="w-full rounded-[0.95rem] border border-[rgba(236,225,196,0.12)] bg-[rgba(255,255,255,0.03)] p-4 text-left transition hover:bg-[rgba(255,255,255,0.05)]"
+                onClick={() => handleLeaveStage("zero_without_annual")}
+                type="button"
+              >
+                <p className="text-sm font-semibold text-[rgba(255,244,214,0.96)]">
+                  Zerar sem ponto anual
+                </p>
+                <p className="mt-1 text-xs text-[rgba(236,225,196,0.56)]">
+                  Todos os pontos da etapa sao zerados. Nao recebe nenhum ponto no ranking anual.
+                </p>
+              </button>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-5 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
+                onClick={() => setShowLeaveStageConfirm(false)}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

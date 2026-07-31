@@ -48,6 +48,7 @@ export type FinalizeStagePlayerPayload = {
   dailyPaid: boolean;
   leftStage: boolean;
   matchPoints: number[];
+  receivesAnnualPoint?: boolean;
 };
 
 export type FinalizeStageInput = {
@@ -282,7 +283,7 @@ export async function finalizeStage(input: FinalizeStageInput) {
           return [player.id, 0];
         }
 
-        return [player.id, calculateAnnualPoints(rankingEntry.position, stagePlayer.leftStage)];
+        return [player.id, calculateAnnualPoints(rankingEntry.position, stagePlayer.leftStage, stagePlayer.receivesAnnualPoint)];
       })
     ),
   };
@@ -783,9 +784,9 @@ function compareRankingEntries(left: RankingEntry, right: RankingEntry) {
   );
 }
 
-function calculateAnnualPoints(position: number, leftStage: boolean) {
+function calculateAnnualPoints(position: number, leftStage: boolean, receivesAnnualPoint?: boolean) {
   if (leftStage) {
-    return 1;
+    return receivesAnnualPoint ? 1 : 0;
   }
 
   if (position === 1) {
