@@ -88,6 +88,7 @@ export function StageSetupScreen({
   const [dailyPrizeOverrideNote, setDailyPrizeOverrideNote] = useState("");
   const [annualContributionOverride, setAnnualContributionOverride] = useState("");
   const [annualContributionOverrideNote, setAnnualContributionOverrideNote] = useState("");
+  const [includeTestInAnnual, setIncludeTestInAnnual] = useState(false);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [actionClockRemaining, setActionClockRemaining] = useState<number | null>(null);
   const [manualAdjustmentMatchIndex, setManualAdjustmentMatchIndex] = useState(0);
@@ -1644,6 +1645,7 @@ export function StageSetupScreen({
             ? Math.round(Number.parseFloat(annualContributionOverride) * 100)
             : null,
           overrideAnnualContributionNote: annualContributionOverrideNote.trim() || null,
+          ...(stage.isTest ? { overrideIncludeInAnnual: includeTestInAnnual } : {}),
         }),
       });
       const payload = (await response.json()) as { error?: string; isTestStage?: boolean };
@@ -1658,6 +1660,7 @@ export function StageSetupScreen({
       setDailyPrizeOverrideNote("");
       setAnnualContributionOverride("");
       setAnnualContributionOverrideNote("");
+      setIncludeTestInAnnual(false);
       setIsRunning(false);
       await appendStageLogEntries([
         ...(dailyPrizeOverride.trim()
@@ -1674,12 +1677,21 @@ export function StageSetupScreen({
               ),
             ]
           : []),
+        ...(stage.isTest && includeTestInAnnual
+          ? [
+              formatStageEventLogEntry(
+                `Etapa de teste incluida nos resultados anuais por decisao administrativa.`
+              ),
+            ]
+          : []),
         formatStageEventLogEntry(`Etapa encerrada em ${formatDateTime(nowIso)}.`),
       ]);
       setStageNotice(
         payload.isTestStage
           ? "Etapa de teste encerrada sem impactar ranking nem pote anual. O resultado ficou salvo para consulta."
-          : "Etapa encerrada com confirmacao administrativa."
+          : stage.isTest && includeTestInAnnual
+            ? "Etapa de teste incluida nos resultados anuais. Encerrada com confirmacao administrativa."
+            : "Etapa encerrada com confirmacao administrativa."
       );
       window.localStorage.removeItem(buildStageRuntimeStorageKey(stage.id));
       router.push(
@@ -2528,6 +2540,44 @@ export function StageSetupScreen({
                 )}
             </div>
 
+            {stage.isTest && (
+              <div className="mt-4 rounded-[1.1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(7,24,18,0.56)] p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                  Etapa de teste
+                </p>
+                <p className="mt-1 text-sm text-[rgba(236,225,196,0.62)]">
+                  Por padrao, etapas de teste nao contam para ranking anual nem pote.
+                </p>
+                <label className="mt-3 flex cursor-pointer items-center gap-3">
+                  <button
+                    className={`relative h-6 w-11 rounded-full border transition-colors ${
+                      includeTestInAnnual
+                        ? "border-[rgba(129,211,120,0.4)] bg-[rgba(129,211,120,0.28)]"
+                        : "border-[rgba(236,225,196,0.16)] bg-[rgba(236,225,196,0.06)]"
+                    }`}
+                    onClick={() => setIncludeTestInAnnual((prev) => !prev)}
+                    type="button"
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full transition-transform ${
+                        includeTestInAnnual
+                          ? "translate-x-5 bg-[rgba(129,211,120,0.96)]"
+                          : "bg-[rgba(236,225,196,0.4)]"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-sm text-[rgba(255,244,214,0.88)]">
+                    Incluir nos resultados anuais
+                  </span>
+                </label>
+                {includeTestInAnnual && (
+                  <p className="mt-2 text-xs text-[rgba(129,211,120,0.8)]">
+                    A etapa sera contabilizada no ranking e pote anuais.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button
                 className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-5 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
@@ -2537,6 +2587,7 @@ export function StageSetupScreen({
                   setDailyPrizeOverrideNote("");
                   setAnnualContributionOverride("");
                   setAnnualContributionOverrideNote("");
+                  setIncludeTestInAnnual(false);
                 }}
                 type="button"
               >

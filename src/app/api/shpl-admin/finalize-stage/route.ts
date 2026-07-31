@@ -109,6 +109,10 @@ export async function POST(request: Request) {
       ? payload.overrideAnnualContributionNote
       : null;
 
+    const overrideIncludeInAnnual = isBoolean(payload.overrideIncludeInAnnual)
+      ? payload.overrideIncludeInAnnual
+      : undefined;
+
     const actualStageStartedAt = isString(payload.actualStageStartedAt) ? payload.actualStageStartedAt : null;
 
     const result = await finalizeStage({
@@ -123,6 +127,7 @@ export async function POST(request: Request) {
       overrideDailyPrizeNote,
       overrideAnnualContributionCents,
       overrideAnnualContributionNote,
+      overrideIncludeInAnnual,
     });
 
     return NextResponse.json(result);

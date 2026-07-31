@@ -62,6 +62,7 @@ export type FinalizeStageInput = {
   overrideDailyPrizeNote?: string | null;
   overrideAnnualContributionCents?: number | null;
   overrideAnnualContributionNote?: string | null;
+  overrideIncludeInAnnual?: boolean;
 };
 
 export type UpdateStageMatchPlacementsInput = {
@@ -319,10 +320,11 @@ export async function finalizeStage(input: FinalizeStageInput) {
     input.overrideDailyPrizeCents != null
       ? Math.max(input.overrideDailyPrizeCents, 0)
       : calculatedDailyPrizeCents;
+  const includeInAnnual = stage.isTest ? (input.overrideIncludeInAnnual ?? false) : true;
   const effectiveAnnualContributionCents =
     input.overrideAnnualContributionCents != null
       ? Math.max(input.overrideAnnualContributionCents, 0)
-      : stage.isTest
+      : stage.isTest && !includeInAnnual
         ? 0
         : annualContributionCents;
   const actualEnd = new Date(input.closedAt);
@@ -351,14 +353,14 @@ export async function finalizeStage(input: FinalizeStageInput) {
     matchesPlayed: stageMatchRecord.matches.length,
     dailyPrize: formatCurrency(dailyPrizeCents / 100),
     annualPotContribution: formatCurrency(effectiveAnnualContributionCents / 100),
-    isTest: stage.isTest ?? false,
+    isTest: (stage.isTest ?? false) && !includeInAnnual,
   };
   const historyDetailWithStageType: StageHistoryDetail = {
     ...historyDetail,
-    isTest: stage.isTest ?? false,
+    isTest: (stage.isTest ?? false) && !includeInAnnual,
   };
 
-  if (stage.isTest) {
+  if (stage.isTest && !includeInAnnual) {
     await writeState({
       ...state,
       history: sortHistoryByDate([...state.history, historySummary], storedStages),
