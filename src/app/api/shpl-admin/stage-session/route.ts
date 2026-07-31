@@ -28,6 +28,15 @@ type StageSessionRequestPayload = {
 };
 
 export async function GET(request: Request) {
+  const access = await getUserAccessFromCookieHeader(request.headers.get("cookie") ?? "");
+
+  if (!canManageTable(access)) {
+    return NextResponse.json(
+      { error: "Apenas dealer e administrador podem consultar a sessao da etapa." },
+      { status: 403 },
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const stageId = searchParams.get("stageId");
   const includeText = searchParams.get("includeText") === "1";

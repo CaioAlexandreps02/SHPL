@@ -32,6 +32,9 @@ type DemoLeagueStoreData = {
   history: HistoryStageSummary[];
   stageHistoryDetails: StageHistoryDetail[];
   annualPotCents: number;
+  manualAnnualPotCents: number | null;
+  manualAnnualPotNote: string | null;
+  manualAnnualPotSetAt: string | null;
 };
 
 export type FinalizeStagePlayerPayload = {
@@ -86,6 +89,9 @@ function buildDefaultLeagueStore(): DemoLeagueStoreData {
     history: snapshot.history,
     stageHistoryDetails: snapshot.stageHistoryDetails,
     annualPotCents: parseCurrencyToCents(snapshot.financialSummary.annualPot),
+    manualAnnualPotCents: null,
+    manualAnnualPotNote: null,
+    manualAnnualPotSetAt: null,
   };
 }
 
@@ -184,9 +190,20 @@ export async function getDemoLeagueSnapshot(): Promise<LeagueSnapshot> {
     stageHistoryDetails: sortStageHistoryByDate(store.stageHistoryDetails, storedStages),
     financialSummary: {
       dailyPrizePool: formatCurrency(0),
-      annualPot: formatCurrency(store.annualPotCents / 100),
+      annualPot: formatCurrency(
+        (store.manualAnnualPotCents ?? store.annualPotCents) / 100,
+      ),
       dailyPaidPlayers: 0,
       annualPaidPlayers: 0,
+      annualPotAutomaticCents: store.annualPotCents,
+      annualPotManualCents: store.manualAnnualPotCents,
+      annualPotIsOverridden: store.manualAnnualPotCents !== null,
+      annualPotManualNote: store.manualAnnualPotNote,
+      annualPotManualSetAt: store.manualAnnualPotSetAt,
+      annualPotDifferenceCents:
+        store.manualAnnualPotCents !== null
+          ? store.manualAnnualPotCents - store.annualPotCents
+          : 0,
     },
     liveMatch,
   };
@@ -289,6 +306,7 @@ export async function finalizeStoredStage(input: FinalizeStoredStageInput) {
     Math.max(input.buyInDaily, 0) *
     input.players.filter((player) => player.dailyPaid).length *
     100;
+  const effectiveAnnualContributionCents = stage.isTest ? 0 : annualContributionCents;
   const actualEnd = new Date(input.closedAt);
   const actualStart =
     input.actualStageStartedAt !== null ? new Date(input.actualStageStartedAt) : null;
@@ -303,8 +321,9 @@ export async function finalizeStoredStage(input: FinalizeStoredStageInput) {
     finalRanking,
     stageMatchRecord,
     totalDurationSeconds,
+    playerNameById,
     dailyPrizeCents,
-    annualContributionCents,
+    annualContributionCents: effectiveAnnualContributionCents,
   });
   const historySummary: HistoryStageSummary = {
     id: stage.id,
@@ -313,10 +332,41 @@ export async function finalizeStoredStage(input: FinalizeStoredStageInput) {
     winnerName: finalRanking[0]?.playerName ?? "-",
     matchesPlayed: stageMatchRecord.matches.length,
     dailyPrize: formatCurrency(dailyPrizeCents / 100),
-    annualPotContribution: formatCurrency(annualContributionCents / 100),
+    annualPotContribution: formatCurrency(effectiveAnnualContributionCents / 100),
+    isTest: stage.isTest ?? false,
+  };
+  const historyDetailWithStageType: StageHistoryDetail = {
+    ...historyDetail,
+    isTest: stage.isTest ?? false,
   };
 
+  if (stage.isTest) {
+    const testOnlyStore: DemoLeagueStoreData = {
+      ...store,
+      history: sortHistoryByStageDate([...store.history, historySummary], storedStages),
+      stageHistoryDetails: sortStageHistoryByDate(
+        [...store.stageHistoryDetails, historyDetailWithStageType],
+        storedStages
+      ),
+    };
+
+    await writeStore(testOnlyStore);
+    await saveStoredStage({
+      id: stage.id,
+      title: stage.title,
+      stageDate: stage.stageDate,
+      status: "finished",
+    });
+
+    return {
+      historySummary,
+      historyDetail: historyDetailWithStageType,
+      isTestStage: true,
+    };
+  }
+
   const nextStore: DemoLeagueStoreData = {
+    ...store,
     annualRankingStats: nextStats,
     annualStagePoints: sortAnnualStagePointsByDate(
       [...store.annualStagePoints, annualStageRecord],
@@ -328,10 +378,10 @@ export async function finalizeStoredStage(input: FinalizeStoredStageInput) {
     ),
     history: sortHistoryByStageDate([...store.history, historySummary], storedStages),
     stageHistoryDetails: sortStageHistoryByDate(
-      [...store.stageHistoryDetails, historyDetail],
+      [...store.stageHistoryDetails, historyDetailWithStageType],
       storedStages
     ),
-    annualPotCents: store.annualPotCents + annualContributionCents,
+    annualPotCents: store.annualPotCents + effectiveAnnualContributionCents,
   };
 
   await writeStore(nextStore);
@@ -344,7 +394,8 @@ export async function finalizeStoredStage(input: FinalizeStoredStageInput) {
 
   return {
     historySummary,
-    historyDetail,
+    historyDetail: historyDetailWithStageType,
+    isTestStage: false,
   };
 }
 
@@ -494,6 +545,7 @@ function buildStageHistoryDetail(input: {
   finalRanking: StageHistoryFinalRankingEntry[];
   stageMatchRecord: StageMatchPoints;
   totalDurationSeconds: number;
+  playerNameById: Map<string, string>;
   dailyPrizeCents: number;
   annualContributionCents: number;
 }) {
@@ -514,7 +566,7 @@ function buildStageHistoryDetail(input: {
       actualStartLabel: formatDateTimeLabel(actualStart),
       actualEndLabel: formatDateTimeLabel(actualEnd),
       durationSeconds,
-      ranking: buildMatchRanking(match.pointsByPlayer),
+      ranking: buildMatchRanking(match.pointsByPlayer, input.playerNameById),
     };
   });
 
@@ -535,11 +587,14 @@ function buildStageHistoryDetail(input: {
   };
 }
 
-function buildMatchRanking(pointsByPlayer: Record<string, number>): StageHistoryMatchRankingEntry[] {
+function buildMatchRanking(
+  pointsByPlayer: Record<string, number>,
+  playerNameById: Map<string, string>
+): StageHistoryMatchRankingEntry[] {
   return Object.entries(pointsByPlayer)
     .map(([playerId, points]) => ({
       playerId,
-      playerName: "",
+      playerName: playerNameById.get(playerId) ?? "Jogador",
       points,
       position: 0,
     }))
@@ -548,7 +603,7 @@ function buildMatchRanking(pointsByPlayer: Record<string, number>): StageHistory
         return right.points - left.points;
       }
 
-      return left.playerId.localeCompare(right.playerId, "pt-BR");
+      return left.playerName.localeCompare(right.playerName, "pt-BR");
     })
     .map((entry, index) => ({
       ...entry,

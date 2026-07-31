@@ -41,6 +41,13 @@ type PlayerActionSnapshot = {
   completedMatchDurations: number[];
   isRunning: boolean;
   seatAssignments: Array<string | null>;
+  currentMatchStartedAt: string | null;
+  actualStageStartedAt: string | null;
+  matchElapsedSeconds: number;
+  currentLevelIndex: number;
+  remainingSeconds: number;
+  actionClockRemaining: number | null;
+  stageClosedAt: string | null;
 };
 
 const SETTINGS_STORAGE_KEY = "shpl-2026-settings";
@@ -108,6 +115,7 @@ export function StageSetupScreen({
   const runtimeHydratedRef = useRef(false);
   const runtimeSyncInFlightRef = useRef(false);
   const lastRuntimeSignatureRef = useRef("");
+  const lastSyncedAtRef = useRef<string | null>(null);
   const stageLogEnsuredRef = useRef(false);
 
   const buildRuntimePlayersSnapshot = useCallback((
@@ -328,6 +336,9 @@ export function StageSetupScreen({
             const signature = serializeRuntimePayload(runtime);
             applyStageRuntimePayload(runtime);
             lastRuntimeSignatureRef.current = signature;
+            if (runtime.updatedAt) {
+              lastSyncedAtRef.current = runtime.updatedAt;
+            }
             window.localStorage.setItem(
               buildStageRuntimeStorageKey(stage.id),
               JSON.stringify(runtime),
@@ -347,6 +358,9 @@ export function StageSetupScreen({
           const parsedRuntime = JSON.parse(rawRuntime) as StoredStageRuntimePayload;
           applyStageRuntimePayload(parsedRuntime);
           lastRuntimeSignatureRef.current = serializeRuntimePayload(parsedRuntime);
+          if (parsedRuntime.updatedAt) {
+            lastSyncedAtRef.current = parsedRuntime.updatedAt;
+          }
         }
       } catch {
         // Sem runtime local valido.
@@ -421,6 +435,9 @@ export function StageSetupScreen({
 
         if (response.ok) {
           lastRuntimeSignatureRef.current = signature;
+          if (payloadWithTimestamp.updatedAt) {
+            lastSyncedAtRef.current = payloadWithTimestamp.updatedAt;
+          }
           window.localStorage.setItem(
             buildStageRuntimeStorageKey(stage.id),
             JSON.stringify(payloadWithTimestamp),
@@ -496,8 +513,20 @@ export function StageSetupScreen({
           return;
         }
 
+        const serverUpdatedAt = runtime.updatedAt ?? null;
+        if (
+          serverUpdatedAt !== null &&
+          lastSyncedAtRef.current !== null &&
+          serverUpdatedAt < lastSyncedAtRef.current
+        ) {
+          return;
+        }
+
         applyStageRuntimePayload(runtime);
         lastRuntimeSignatureRef.current = nextSignature;
+        if (serverUpdatedAt !== null) {
+          lastSyncedAtRef.current = serverUpdatedAt;
+        }
         window.localStorage.setItem(
           buildStageRuntimeStorageKey(stage.id),
           JSON.stringify(runtime),
@@ -680,10 +709,6 @@ export function StageSetupScreen({
     () => eligibleStagePlayers.filter((player) => !player.outOfCurrentMatch),
     [eligibleStagePlayers]
   );
-  const currentMatchHasResults = useMemo(
-    () => players.some((player) => (player.matchPoints[currentMatchIndex] ?? 0) > 0),
-    [currentMatchIndex, players]
-  );
   const estimatedStageChips = useMemo(
     () =>
       eligibleStagePlayers.reduce(
@@ -753,8 +778,7 @@ export function StageSetupScreen({
     currentMatchStartedAt !== null &&
     !currentMatchClosed &&
     eligibleStagePlayers.length >= 2 &&
-    activeMatchPlayers.length <= 1 &&
-    currentMatchHasResults;
+    activeMatchPlayers.length <= 1;
   const canStartCurrentMatch =
     !stageClosedAt && eligibleStagePlayers.length >= 2 && !currentMatchClosed;
   const canStartNextMatch =
@@ -829,6 +853,9 @@ export function StageSetupScreen({
   );
   const closeCurrentMatchAsFinished = useCallback(
     (notice: string) => {
+      if (currentMatchClosed) {
+        return;
+      }
       setIsRunning(false);
       setActionClockRemaining(null);
       setCurrentMatchClosed(true);
@@ -841,7 +868,7 @@ export function StageSetupScreen({
       });
       setStageNotice(notice);
     },
-    [currentMatchIndex, matchElapsedSeconds]
+    [currentMatchClosed, currentMatchIndex, matchElapsedSeconds]
   );
 
   useEffect(() => {
@@ -1086,6 +1113,13 @@ export function StageSetupScreen({
         completedMatchDurations: structuredClone(completedMatchDurations),
         isRunning,
         seatAssignments: structuredClone(seatAssignments),
+        currentMatchStartedAt,
+        actualStageStartedAt,
+        matchElapsedSeconds,
+        currentLevelIndex,
+        remainingSeconds,
+        actionClockRemaining,
+        stageClosedAt,
       },
     ]);
   }
@@ -1204,19 +1238,21 @@ export function StageSetupScreen({
     }
 
     pushPlayerActionSnapshot();
+
+    const activePlayers = players.filter(
+      (player) =>
+        player.annualPaid &&
+        player.dailyPaid &&
+        !player.leftStage &&
+        !player.outOfCurrentMatch
+    );
+    const finalPosition = activePlayers.length;
+    const pointsForThisExit = calculateMatchPoints(finalPosition);
+
+    let winnerId: string | null = null;
     let winnerName: string | null = null;
 
     setPlayers((currentPlayers) => {
-      const activePlayers = currentPlayers.filter(
-        (player) =>
-          player.annualPaid &&
-          player.dailyPaid &&
-          !player.leftStage &&
-          !player.outOfCurrentMatch
-      );
-      const finalPosition = activePlayers.length;
-      const pointsForThisExit = calculateMatchPoints(finalPosition);
-
       const nextPlayers = currentPlayers.map((player) => {
         if (player.playerId !== selectedPlayer.playerId) {
           return player;
@@ -1237,10 +1273,11 @@ export function StageSetupScreen({
       );
 
       if (remainingPlayers.length === 1) {
-        const winnerId = remainingPlayers[0].playerId;
+        const detectedWinnerId = remainingPlayers[0].playerId;
+        winnerId = detectedWinnerId;
         winnerName = remainingPlayers[0].playerName;
         return nextPlayers.map((player) => {
-          if (player.playerId !== winnerId) {
+          if (player.playerId !== detectedWinnerId) {
             return player;
           }
 
@@ -1255,10 +1292,10 @@ export function StageSetupScreen({
         });
       }
 
-        return nextPlayers;
+      return nextPlayers;
     });
 
-    if (winnerName) {
+    if (winnerId && winnerName) {
       closeCurrentMatchAsFinished(
         `${winnerName} ficou sozinho na partida e assumiu automaticamente o 1o lugar.`
       );
@@ -1266,9 +1303,11 @@ export function StageSetupScreen({
         formatStageEventLogEntry(`${selectedPlayer.playerName} saiu da partida.`),
         formatStageEventLogEntry(`${winnerName} ficou automaticamente em primeiro lugar.`),
       ]);
-      announceTableMessage(
-        `${selectedPlayer.playerName} saiu da partida. ${winnerName} ficou em primeiro lugar.`
-      );
+      if (!stageClosedAt) {
+        announceTableMessage(
+          `${selectedPlayer.playerName} saiu da partida. ${winnerName} ficou em primeiro lugar.`
+        );
+      }
       return;
     }
 
@@ -1276,7 +1315,9 @@ export function StageSetupScreen({
     void appendStageLogEntries([
       formatStageEventLogEntry(`${selectedPlayer.playerName} saiu da partida atual.`),
     ]);
-    announceTableMessage(`${selectedPlayer.playerName} saiu da partida.`);
+    if (!stageClosedAt) {
+      announceTableMessage(`${selectedPlayer.playerName} saiu da partida.`);
+    }
   }
 
   function handleLeaveStage() {
@@ -1422,6 +1463,7 @@ export function StageSetupScreen({
         return {
           ...player,
           matchPoints: nextMatchPoints,
+          outOfCurrentMatch: placement ? false : player.outOfCurrentMatch,
         };
       })
     );
@@ -1458,6 +1500,13 @@ export function StageSetupScreen({
       setCompletedMatchDurations(previousSnapshot.completedMatchDurations);
       setIsRunning(previousSnapshot.isRunning);
       setSeatAssignments(normalizeSharedSeatAssignments(previousSnapshot.seatAssignments));
+      setCurrentMatchStartedAt(previousSnapshot.currentMatchStartedAt);
+      setActualStageStartedAt(previousSnapshot.actualStageStartedAt);
+      setMatchElapsedSeconds(previousSnapshot.matchElapsedSeconds);
+      setCurrentLevelIndex(previousSnapshot.currentLevelIndex);
+      setRemainingSeconds(previousSnapshot.remainingSeconds);
+      setActionClockRemaining(previousSnapshot.actionClockRemaining);
+      setStageClosedAt(previousSnapshot.stageClosedAt);
       setStageNotice("Ultima acao desfeita.");
       return currentHistory.slice(0, -1);
     });

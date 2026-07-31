@@ -82,6 +82,12 @@ export type FinancialSummaryData = {
   annualPot: string;
   dailyPaidPlayers: number;
   annualPaidPlayers: number;
+  annualPotAutomaticCents: number;
+  annualPotManualCents: number | null;
+  annualPotIsOverridden: boolean;
+  annualPotManualNote: string | null;
+  annualPotManualSetAt: string | null;
+  annualPotDifferenceCents: number;
 };
 
 export type AnnualAward = {

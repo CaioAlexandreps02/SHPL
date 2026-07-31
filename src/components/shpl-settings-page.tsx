@@ -117,6 +117,20 @@ export function SHPLSettingsPage({ snapshot }: { snapshot: LeagueSnapshot }) {
   const [breakDurationMinutes, setBreakDurationMinutes] = useState("0");
   const [breakEveryLevels, setBreakEveryLevels] = useState("0");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [annualPotManualInput, setAnnualPotManualInput] = useState("");
+  const [annualPotNoteInput, setAnnualPotNoteInput] = useState("");
+  const [annualPotBreakdown, setAnnualPotBreakdown] = useState<{
+    automaticCents: number;
+    manualCents: number | null;
+    effectiveCents: number;
+    isOverridden: boolean;
+    manualNote: string | null;
+    manualSetAt: string | null;
+    differenceCents: number;
+  } | null>(null);
+  const [annualPotOverrideStatus, setAnnualPotOverrideStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
 
   useEffect(() => {
     let timeoutId: number | undefined;
@@ -191,6 +205,43 @@ export function SHPLSettingsPage({ snapshot }: { snapshot: LeagueSnapshot }) {
       }
     };
   }, [snapshot]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchBreakdown() {
+      try {
+        const response = await fetch("/api/shpl-admin/annual-pot");
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          automaticCents: number;
+          manualCents: number | null;
+          effectiveCents: number;
+          isOverridden: boolean;
+          manualNote: string | null;
+          manualSetAt: string | null;
+          differenceCents: number;
+        };
+        if (!cancelled) {
+          setAnnualPotBreakdown(data);
+          if (!data.isOverridden) {
+            setAnnualPotManualInput("");
+            setAnnualPotNoteInput("");
+          } else if (data.manualCents !== null) {
+            setAnnualPotManualInput(String(data.manualCents / 100));
+            setAnnualPotNoteInput(data.manualNote ?? "");
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    void fetchBreakdown();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const stackCalculation = useMemo(() => {
     const players = Math.max(Number.parseInt(stackPlayers || "0", 10) || 0, 1);
@@ -432,6 +483,66 @@ export function SHPLSettingsPage({ snapshot }: { snapshot: LeagueSnapshot }) {
 
   function handleApplyAwardPreset(presetKey: keyof typeof annualAwardPresets) {
     setAnnualAwards(annualAwardPresets[presetKey].map((award) => ({ ...award })));
+  }
+
+  async function handleSaveAnnualPotOverride() {
+    const parsed = Number.parseFloat(annualPotManualInput);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setAnnualPotOverrideStatus("error");
+      window.setTimeout(() => setAnnualPotOverrideStatus("idle"), 2400);
+      return;
+    }
+
+    setAnnualPotOverrideStatus("saving");
+
+    try {
+      const response = await fetch("/api/shpl-admin/annual-pot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          manualCents: Math.round(parsed * 100),
+          note: annualPotNoteInput.trim() || null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Falha ao salvar");
+      }
+
+      const data = (await response.json()) as typeof annualPotBreakdown;
+      setAnnualPotBreakdown(data);
+      setAnnualPotOverrideStatus("saved");
+      window.setTimeout(() => setAnnualPotOverrideStatus("idle"), 2400);
+    } catch {
+      setAnnualPotOverrideStatus("error");
+      window.setTimeout(() => setAnnualPotOverrideStatus("idle"), 2400);
+    }
+  }
+
+  async function handleClearAnnualPotOverride() {
+    setAnnualPotOverrideStatus("saving");
+
+    try {
+      const response = await fetch("/api/shpl-admin/annual-pot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manualCents: null, note: null }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Falha ao limpar");
+      }
+
+      const data = (await response.json()) as typeof annualPotBreakdown;
+      setAnnualPotBreakdown(data);
+      setAnnualPotManualInput("");
+      setAnnualPotNoteInput("");
+      setAnnualPotOverrideStatus("saved");
+      window.setTimeout(() => setAnnualPotOverrideStatus("idle"), 2400);
+    } catch {
+      setAnnualPotOverrideStatus("error");
+      window.setTimeout(() => setAnnualPotOverrideStatus("idle"), 2400);
+    }
   }
 
   function handleRemoveAwardPosition(position: number) {
@@ -1061,6 +1172,111 @@ export function SHPLSettingsPage({ snapshot }: { snapshot: LeagueSnapshot }) {
                   label="Percentual total"
                   value={`${annualAwards.reduce((total, award) => total + award.percentage, 0)}%`}
                 />
+              </div>
+
+              <div className="mt-6 rounded-[1.15rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(7,24,18,0.56)] p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[rgba(255,244,214,0.96)]">
+                      Sobrescrita manual do pote anual
+                    </p>
+                    <p className="mt-1 max-w-2xl text-xs text-[rgba(236,225,196,0.58)]">
+                      Ajuste manualmente o valor do pote anual quando o calculo automatico
+                      (contribuicoes de buy-in) estiver incorreto ou precisar de correcao.
+                    </p>
+                  </div>
+                  {annualPotBreakdown?.isOverridden && (
+                    <span className="shrink-0 rounded-full border border-[rgba(255,183,32,0.28)] bg-[rgba(255,183,32,0.12)] px-3 py-1 text-xs font-semibold text-[rgba(255,236,184,0.98)]">
+                      Manual ativo
+                    </span>
+                  )}
+                </div>
+
+                {annualPotBreakdown && (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <InfoRow
+                      label="Calculado automaticamente"
+                      value={formatCurrencyDisplay(annualPotBreakdown.automaticCents / 100)}
+                    />
+                    <InfoRow
+                      label="Valor efetivo"
+                      value={formatCurrencyDisplay(annualPotBreakdown.effectiveCents / 100)}
+                    />
+                  </div>
+                )}
+
+                <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                    <Field label="Valor manual (R$)">
+                      <input
+                        className={inputClassName}
+                        inputMode="decimal"
+                        onChange={(event) => setAnnualPotManualInput(event.target.value)}
+                        placeholder="Ex: 200"
+                        step="0.01"
+                        type="number"
+                        value={annualPotManualInput}
+                      />
+                    </Field>
+                    <Field label="Nota do ajuste (opcional)">
+                      <input
+                        className={inputClassName}
+                        maxLength={240}
+                        onChange={(event) => setAnnualPotNoteInput(event.target.value)}
+                        placeholder="Ex: Correcao pos pagamento atrasado"
+                        value={annualPotNoteInput}
+                      />
+                    </Field>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <button
+                      className={`h-11 rounded-[0.95rem] border px-5 text-sm font-semibold transition ${
+                        annualPotOverrideStatus === "saved"
+                          ? "border-[rgba(129,211,120,0.34)] bg-[linear-gradient(180deg,#7fd066_0%,#2f8a3b_100%)] text-[#041b08]"
+                          : annualPotOverrideStatus === "error"
+                            ? "border-[rgba(255,132,92,0.26)] bg-[rgba(255,132,92,0.12)] text-[rgba(255,214,198,0.98)]"
+                            : "border-[rgba(255,208,101,0.22)] bg-[linear-gradient(180deg,#ffd54e_0%,#c88807_100%)] text-[#2a1a00]"
+                      }`}
+                      disabled={annualPotOverrideStatus === "saving"}
+                      onClick={handleSaveAnnualPotOverride}
+                      type="button"
+                    >
+                      {annualPotOverrideStatus === "saving"
+                        ? "Salvando..."
+                        : annualPotOverrideStatus === "saved"
+                          ? "Salvo!"
+                          : "Salvar valor"}
+                    </button>
+                    {annualPotBreakdown?.isOverridden && (
+                      <button
+                        className="h-11 rounded-[0.95rem] border border-[rgba(255,132,92,0.24)] bg-[rgba(255,132,92,0.08)] px-5 text-sm font-semibold text-[rgba(255,203,184,0.96)] transition hover:bg-[rgba(255,132,92,0.14)] disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={annualPotOverrideStatus === "saving"}
+                        onClick={handleClearAnnualPotOverride}
+                        type="button"
+                      >
+                        Limpar sobrescrita
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {annualPotBreakdown?.isOverridden && annualPotBreakdown.manualSetAt && (
+                  <p className="mt-3 text-xs text-[rgba(236,225,196,0.48)]">
+                    Ultimo ajuste:{" "}
+                    {new Date(annualPotBreakdown.manualSetAt).toLocaleDateString("pt-BR")} ·
+                    Diferenca:{" "}
+                    <span
+                      className={
+                        annualPotBreakdown.differenceCents >= 0
+                          ? "text-[rgba(167,229,178,0.92)]"
+                          : "text-[rgba(255,184,143,0.96)]"
+                      }
+                    >
+                      {annualPotBreakdown.differenceCents >= 0 ? "+" : ""}
+                      {formatCurrencyDisplay(annualPotBreakdown.differenceCents / 100)}
+                    </span>
+                  </p>
+                )}
               </div>
             </article>
           ) : null}

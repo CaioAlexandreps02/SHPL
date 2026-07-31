@@ -36,6 +36,9 @@ type DemoLeagueStateData = {
   history: HistoryStageSummary[];
   stageHistoryDetails: StageHistoryDetail[];
   annualPotCents: number;
+  manualAnnualPotCents: number | null;
+  manualAnnualPotNote: string | null;
+  manualAnnualPotSetAt: string | null;
 };
 
 export type FinalizeStagePlayerPayload = {
@@ -81,6 +84,9 @@ function buildDefaultState(): DemoLeagueStateData {
     history: snapshot.history,
     stageHistoryDetails: snapshot.stageHistoryDetails,
     annualPotCents: parseCurrencyToCents(snapshot.financialSummary.annualPot),
+    manualAnnualPotCents: null,
+    manualAnnualPotNote: null,
+    manualAnnualPotSetAt: null,
   };
 }
 
@@ -182,12 +188,21 @@ export async function getDemoLeagueSnapshot(): Promise<LeagueSnapshot> {
       availableActions: ["Buy-in anual", "Buy-in geral"],
     })),
     dayRanking: neutralRanking,
-    financialSummary: {
-      dailyPrizePool: formatCurrency(0),
-      annualPot: formatCurrency(state.annualPotCents / 100),
-      dailyPaidPlayers: 0,
-      annualPaidPlayers: 0,
-    },
+    financialSummary: (() => {
+      const breakdown = calculateAnnualPotBreakdown(state);
+      return {
+        dailyPrizePool: formatCurrency(0),
+        annualPot: formatCurrency(breakdown.effectiveCents / 100),
+        dailyPaidPlayers: 0,
+        annualPaidPlayers: 0,
+        annualPotAutomaticCents: breakdown.automaticCents,
+        annualPotManualCents: breakdown.manualCents,
+        annualPotIsOverridden: breakdown.isOverridden,
+        annualPotManualNote: breakdown.manualNote,
+        annualPotManualSetAt: breakdown.manualSetAt,
+        annualPotDifferenceCents: breakdown.differenceCents,
+      };
+    })(),
     liveMatch: {
       id: `${currentStage.id}-match-1`,
       stageId: currentStage.id,
@@ -332,15 +347,12 @@ export async function finalizeStage(input: FinalizeStageInput) {
 
   if (stage.isTest) {
     await writeState({
-      annualRankingStats: state.annualRankingStats,
-      annualStagePoints: state.annualStagePoints,
-      stageMatchPoints: state.stageMatchPoints,
+      ...state,
       history: sortHistoryByDate([...state.history, historySummary], storedStages),
       stageHistoryDetails: sortStageHistoryByDate(
         [...state.stageHistoryDetails, historyDetailWithStageType],
         storedStages
       ),
-      annualPotCents: state.annualPotCents,
     });
 
     await saveStoredStage({
@@ -360,6 +372,7 @@ export async function finalizeStage(input: FinalizeStageInput) {
   }
 
   await writeState({
+    ...state,
     annualRankingStats: nextStats,
     annualStagePoints: sortAnnualStagePointsByDate(
       [...state.annualStagePoints, annualStageRecord],
@@ -391,6 +404,80 @@ export async function finalizeStage(input: FinalizeStageInput) {
     historyDetail: historyDetailWithStageType,
     isTestStage: false,
   };
+}
+
+export type AnnualPotBreakdown = {
+  automaticCents: number;
+  manualCents: number | null;
+  effectiveCents: number;
+  isOverridden: boolean;
+  manualNote: string | null;
+  manualSetAt: string | null;
+  differenceCents: number;
+  stageContributions: Array<{
+    stageId: string;
+    stageTitle: string;
+    stageDateLabel: string;
+    contributionCents: number;
+    isTest: boolean;
+  }>;
+};
+
+export function calculateAnnualPotBreakdown(state: DemoLeagueStateData): AnnualPotBreakdown {
+  const stageContributions = state.history.map((stage) => ({
+    stageId: stage.id,
+    stageTitle: stage.title,
+    stageDateLabel: stage.stageDateLabel,
+    contributionCents: parseCurrencyToCents(stage.annualPotContribution),
+    isTest: stage.isTest ?? false,
+  }));
+
+  const nonTestContributions = stageContributions.filter((entry) => !entry.isTest);
+  const automaticCents = nonTestContributions.reduce(
+    (total, entry) => total + entry.contributionCents,
+    0,
+  );
+
+  const manualCents = state.manualAnnualPotCents;
+  const isOverridden = manualCents !== null;
+  const effectiveCents = isOverridden ? (manualCents as number) : automaticCents;
+  const differenceCents = isOverridden ? effectiveCents - automaticCents : 0;
+
+  return {
+    automaticCents,
+    manualCents,
+    effectiveCents,
+    isOverridden,
+    manualNote: state.manualAnnualPotNote,
+    manualSetAt: state.manualAnnualPotSetAt,
+    differenceCents,
+    stageContributions,
+  };
+}
+
+export async function getAnnualPotBreakdown(): Promise<AnnualPotBreakdown> {
+  const state = await readState();
+  return calculateAnnualPotBreakdown(state);
+}
+
+export type UpdateAnnualPotOverrideInput = {
+  manualCents: number | null;
+  note: string | null;
+};
+
+export async function updateAnnualPotOverride(input: UpdateAnnualPotOverrideInput) {
+  const state = await readState();
+  const nextState: DemoLeagueStateData = {
+    ...state,
+    manualAnnualPotCents:
+      input.manualCents === null
+        ? null
+        : Math.max(Math.round(input.manualCents), 0),
+    manualAnnualPotNote: input.note?.trim() ? input.note.trim().slice(0, 240) : null,
+    manualAnnualPotSetAt: input.manualCents === null ? null : new Date().toISOString(),
+  };
+  await writeState(nextState);
+  return calculateAnnualPotBreakdown(nextState);
 }
 
 export async function updateStageMatchPlacements(input: UpdateStageMatchPlacementsInput) {
@@ -547,6 +634,7 @@ export async function updateStageMatchPlacements(input: UpdateStageMatchPlacemen
     : rebuildAnnualRankingStats(storedPlayers, updatedAnnualStagePoints, updatedStageHistoryDetails);
 
   await writeState({
+    ...state,
     annualRankingStats: updatedAnnualRankingStats,
     annualStagePoints: updatedAnnualStagePoints,
     stageMatchPoints: updatedStageMatchPoints,
@@ -995,7 +1083,10 @@ function mergeLeagueStates(
       bundled.stageHistoryDetails,
       (entry) => entry.stageId,
     ),
-    annualPotCents: bundled.annualPotCents || current.annualPotCents,
+    annualPotCents: current.annualPotCents ?? bundled.annualPotCents,
+    manualAnnualPotCents: current.manualAnnualPotCents ?? bundled.manualAnnualPotCents ?? null,
+    manualAnnualPotNote: current.manualAnnualPotNote ?? bundled.manualAnnualPotNote ?? null,
+    manualAnnualPotSetAt: current.manualAnnualPotSetAt ?? bundled.manualAnnualPotSetAt ?? null,
   };
 }
 

@@ -24,6 +24,8 @@ const championship: Championship = {
   seasonYear: 2026,
 };
 
+const DEFAULT_BUY_IN = 10;
+
 const players: Player[] = [
   { id: "p1", name: "Caio", active: true },
   { id: "p2", name: "Alisson", active: true },
@@ -284,10 +286,16 @@ export function createMockSnapshot(): LeagueSnapshot {
     blindStructure,
     chipSet,
     financialSummary: {
-      dailyPrizePool: formatCurrency(dailyPaidPlayers * 10),
-      annualPot: formatCurrency(200),
+      dailyPrizePool: formatCurrency(dailyPaidPlayers * DEFAULT_BUY_IN),
+      annualPot: formatCurrency(annualPaidPlayers * DEFAULT_BUY_IN),
       dailyPaidPlayers,
       annualPaidPlayers,
+      annualPotAutomaticCents: annualPaidPlayers * DEFAULT_BUY_IN * 100,
+      annualPotManualCents: null,
+      annualPotIsOverridden: false,
+      annualPotManualNote: null,
+      annualPotManualSetAt: null,
+      annualPotDifferenceCents: 0,
     },
     annualAwards: [
       { position: 1, percentage: 40 },
