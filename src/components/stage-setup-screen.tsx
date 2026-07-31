@@ -86,6 +86,8 @@ export function StageSetupScreen({
   const [isClosingStage, setIsClosingStage] = useState(false);
   const [dailyPrizeOverride, setDailyPrizeOverride] = useState("");
   const [dailyPrizeOverrideNote, setDailyPrizeOverrideNote] = useState("");
+  const [annualContributionOverride, setAnnualContributionOverride] = useState("");
+  const [annualContributionOverrideNote, setAnnualContributionOverrideNote] = useState("");
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [actionClockRemaining, setActionClockRemaining] = useState<number | null>(null);
   const [manualAdjustmentMatchIndex, setManualAdjustmentMatchIndex] = useState(0);
@@ -1550,6 +1552,18 @@ export function StageSetupScreen({
     }
   }, [players]);
 
+  const calculatedAnnualContribution = useMemo(() => {
+    try {
+      const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+      const parsed = rawSettings ? (JSON.parse(rawSettings) as { buyInAnnual?: string }) : null;
+      const buyInAnnual = Number.parseInt(parsed?.buyInAnnual ?? "0", 10) || 0;
+      const annualPaidCount = players.filter((p) => p.annualPaid).length;
+      return buyInAnnual * annualPaidCount;
+    } catch {
+      return 0;
+    }
+  }, [players]);
+
   function handleUndoLastAction() {
     setPlayerActionHistory((currentHistory) => {
       const previousSnapshot = currentHistory[currentHistory.length - 1];
@@ -1626,6 +1640,10 @@ export function StageSetupScreen({
             ? Math.round(Number.parseFloat(dailyPrizeOverride) * 100)
             : null,
           overrideDailyPrizeNote: dailyPrizeOverrideNote.trim() || null,
+          overrideAnnualContributionCents: annualContributionOverride.trim()
+            ? Math.round(Number.parseFloat(annualContributionOverride) * 100)
+            : null,
+          overrideAnnualContributionNote: annualContributionOverrideNote.trim() || null,
         }),
       });
       const payload = (await response.json()) as { error?: string; isTestStage?: boolean };
@@ -1638,12 +1656,21 @@ export function StageSetupScreen({
       setShowCloseStageConfirm(false);
       setDailyPrizeOverride("");
       setDailyPrizeOverrideNote("");
+      setAnnualContributionOverride("");
+      setAnnualContributionOverrideNote("");
       setIsRunning(false);
       await appendStageLogEntries([
         ...(dailyPrizeOverride.trim()
           ? [
               formatStageEventLogEntry(
                 `Premiacao do dia ajustada manualmente para R$ ${Number.parseFloat(dailyPrizeOverride).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}${dailyPrizeOverrideNote.trim() ? ` (${dailyPrizeOverrideNote.trim()})` : ""}.`
+              ),
+            ]
+          : []),
+        ...(annualContributionOverride.trim()
+          ? [
+              formatStageEventLogEntry(
+                `Contribuicao anual ajustada manualmente para R$ ${Number.parseFloat(annualContributionOverride).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}${annualContributionOverrideNote.trim() ? ` (${annualContributionOverrideNote.trim()})` : ""}.`
               ),
             ]
           : []),
@@ -2444,6 +2471,63 @@ export function StageSetupScreen({
                 )}
             </div>
 
+            <div className="mt-4 rounded-[1.1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(7,24,18,0.56)] p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                Contribuicao anual do pote
+              </p>
+              <p className="mt-1 text-sm text-[rgba(236,225,196,0.62)]">
+                Calculado: R${" "}
+                {(calculatedAnnualContribution / 100).toLocaleString("pt-BR", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}{" "}
+                ({players.filter((p) => p.annualPaid).length} pagantes)
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                <label className="block">
+                  <span className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                    Valor da contribuicao (R$)
+                  </span>
+                  <input
+                    className="mt-2 h-11 w-full rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none placeholder:text-[rgba(236,225,196,0.4)]"
+                    inputMode="decimal"
+                    onChange={(e) => setAnnualContributionOverride(e.target.value)}
+                    placeholder={`Deixe vazio para usar R$ ${(calculatedAnnualContribution / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+                    step="0.01"
+                    type="number"
+                    value={annualContributionOverride}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                    Nota (opcional)
+                  </span>
+                  <input
+                    className="mt-2 h-11 w-full rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none placeholder:text-[rgba(236,225,196,0.4)]"
+                    maxLength={240}
+                    onChange={(e) => setAnnualContributionOverrideNote(e.target.value)}
+                    placeholder="Ex: Jogador pagou valor diferente"
+                    value={annualContributionOverrideNote}
+                  />
+                </label>
+              </div>
+              {annualContributionOverride.trim() &&
+                Number.parseFloat(annualContributionOverride) !== calculatedAnnualContribution / 100 && (
+                  <p className="mt-2 text-xs text-[rgba(255,184,143,0.96)]">
+                    Diferenca:{" "}
+                    {Number.parseFloat(annualContributionOverride) > calculatedAnnualContribution / 100 ? "+" : ""}
+                    R${" "}
+                    {(
+                      Number.parseFloat(annualContributionOverride) -
+                      calculatedAnnualContribution / 100
+                    ).toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                )}
+            </div>
+
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button
                 className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-5 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
@@ -2451,6 +2535,8 @@ export function StageSetupScreen({
                   setShowCloseStageConfirm(false);
                   setDailyPrizeOverride("");
                   setDailyPrizeOverrideNote("");
+                  setAnnualContributionOverride("");
+                  setAnnualContributionOverrideNote("");
                 }}
                 type="button"
               >

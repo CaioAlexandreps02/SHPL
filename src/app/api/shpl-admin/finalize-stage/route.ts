@@ -101,6 +101,14 @@ export async function POST(request: Request) {
       ? payload.overrideDailyPrizeNote
       : null;
 
+    const overrideAnnualContributionCents =
+      payload.overrideAnnualContributionCents != null && isFiniteNumber(payload.overrideAnnualContributionCents)
+        ? Math.max(payload.overrideAnnualContributionCents, 0)
+        : null;
+    const overrideAnnualContributionNote = isString(payload.overrideAnnualContributionNote)
+      ? payload.overrideAnnualContributionNote
+      : null;
+
     const actualStageStartedAt = isString(payload.actualStageStartedAt) ? payload.actualStageStartedAt : null;
 
     const result = await finalizeStage({
@@ -113,6 +121,8 @@ export async function POST(request: Request) {
       buyInDaily,
       overrideDailyPrizeCents,
       overrideDailyPrizeNote,
+      overrideAnnualContributionCents,
+      overrideAnnualContributionNote,
     });
 
     return NextResponse.json(result);

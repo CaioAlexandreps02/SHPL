@@ -60,6 +60,8 @@ export type FinalizeStageInput = {
   buyInDaily: number;
   overrideDailyPrizeCents?: number | null;
   overrideDailyPrizeNote?: string | null;
+  overrideAnnualContributionCents?: number | null;
+  overrideAnnualContributionNote?: string | null;
 };
 
 export type UpdateStageMatchPlacementsInput = {
@@ -317,7 +319,12 @@ export async function finalizeStage(input: FinalizeStageInput) {
     input.overrideDailyPrizeCents != null
       ? Math.max(input.overrideDailyPrizeCents, 0)
       : calculatedDailyPrizeCents;
-  const effectiveAnnualContributionCents = stage.isTest ? 0 : annualContributionCents;
+  const effectiveAnnualContributionCents =
+    input.overrideAnnualContributionCents != null
+      ? Math.max(input.overrideAnnualContributionCents, 0)
+      : stage.isTest
+        ? 0
+        : annualContributionCents;
   const actualEnd = new Date(input.closedAt);
   const actualStart =
     input.actualStageStartedAt !== null ? new Date(input.actualStageStartedAt) : null;
@@ -393,7 +400,7 @@ export async function finalizeStage(input: FinalizeStageInput) {
       [...state.stageHistoryDetails, historyDetailWithStageType],
       storedStages
     ),
-    annualPotCents: state.annualPotCents + annualContributionCents,
+    annualPotCents: state.annualPotCents + effectiveAnnualContributionCents,
   });
 
   await saveStoredStage({
