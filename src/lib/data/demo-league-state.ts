@@ -58,6 +58,8 @@ export type FinalizeStageInput = {
   players: FinalizeStagePlayerPayload[];
   buyInAnnual: number;
   buyInDaily: number;
+  overrideDailyPrizeCents?: number | null;
+  overrideDailyPrizeNote?: string | null;
 };
 
 export type UpdateStageMatchPlacementsInput = {
@@ -307,10 +309,14 @@ export async function finalizeStage(input: FinalizeStageInput) {
     Math.max(input.buyInAnnual, 0) *
     input.players.filter((player) => player.annualPaid).length *
     100;
-  const dailyPrizeCents =
+  const calculatedDailyPrizeCents =
     Math.max(input.buyInDaily, 0) *
     input.players.filter((player) => player.dailyPaid).length *
     100;
+  const dailyPrizeCents =
+    input.overrideDailyPrizeCents != null
+      ? Math.max(input.overrideDailyPrizeCents, 0)
+      : calculatedDailyPrizeCents;
   const effectiveAnnualContributionCents = stage.isTest ? 0 : annualContributionCents;
   const actualEnd = new Date(input.closedAt);
   const actualStart =

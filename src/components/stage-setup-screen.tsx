@@ -84,6 +84,8 @@ export function StageSetupScreen({
   const [currentMatchClosed, setCurrentMatchClosed] = useState(false);
   const [showCloseStageConfirm, setShowCloseStageConfirm] = useState(false);
   const [isClosingStage, setIsClosingStage] = useState(false);
+  const [dailyPrizeOverride, setDailyPrizeOverride] = useState("");
+  const [dailyPrizeOverrideNote, setDailyPrizeOverrideNote] = useState("");
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [actionClockRemaining, setActionClockRemaining] = useState<number | null>(null);
   const [manualAdjustmentMatchIndex, setManualAdjustmentMatchIndex] = useState(0);
@@ -1536,6 +1538,18 @@ export function StageSetupScreen({
     ]);
   }
 
+  const calculatedDailyPrize = useMemo(() => {
+    try {
+      const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+      const parsed = rawSettings ? (JSON.parse(rawSettings) as { buyInDaily?: string }) : null;
+      const buyInDaily = Number.parseInt(parsed?.buyInDaily ?? "0", 10) || 0;
+      const dailyPaidCount = players.filter((p) => p.dailyPaid).length;
+      return buyInDaily * dailyPaidCount;
+    } catch {
+      return 0;
+    }
+  }, [players]);
+
   function handleUndoLastAction() {
     setPlayerActionHistory((currentHistory) => {
       const previousSnapshot = currentHistory[currentHistory.length - 1];
@@ -1608,6 +1622,10 @@ export function StageSetupScreen({
           })),
           buyInAnnual: Number.parseInt(parsedSettings?.buyInAnnual ?? "0", 10) || 0,
           buyInDaily: Number.parseInt(parsedSettings?.buyInDaily ?? "0", 10) || 0,
+          overrideDailyPrizeCents: dailyPrizeOverride.trim()
+            ? Math.round(Number.parseFloat(dailyPrizeOverride) * 100)
+            : null,
+          overrideDailyPrizeNote: dailyPrizeOverrideNote.trim() || null,
         }),
       });
       const payload = (await response.json()) as { error?: string; isTestStage?: boolean };
@@ -1618,8 +1636,17 @@ export function StageSetupScreen({
 
       setStageClosedAt(nowIso);
       setShowCloseStageConfirm(false);
+      setDailyPrizeOverride("");
+      setDailyPrizeOverrideNote("");
       setIsRunning(false);
       await appendStageLogEntries([
+        ...(dailyPrizeOverride.trim()
+          ? [
+              formatStageEventLogEntry(
+                `Premiacao do dia ajustada manualmente para R$ ${Number.parseFloat(dailyPrizeOverride).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}${dailyPrizeOverrideNote.trim() ? ` (${dailyPrizeOverrideNote.trim()})` : ""}.`
+              ),
+            ]
+          : []),
         formatStageEventLogEntry(`Etapa encerrada em ${formatDateTime(nowIso)}.`),
       ]);
       setStageNotice(
@@ -2360,10 +2387,71 @@ export function StageSetupScreen({
               Isso vai travar a operacao da etapa atual. Use essa confirmacao somente quando todas as partidas do dia ja tiverem sido concluidas.
             </p>
 
+            <div className="mt-5 rounded-[1.1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(7,24,18,0.56)] p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                Premiacao do dia
+              </p>
+              <p className="mt-1 text-sm text-[rgba(236,225,196,0.62)]">
+                Calculado: R${" "}
+                {(calculatedDailyPrize / 100).toLocaleString("pt-BR", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}{" "}
+                ({players.filter((p) => p.dailyPaid).length} pagantes)
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                <label className="block">
+                  <span className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                    Valor da premiacao (R$)
+                  </span>
+                  <input
+                    className="mt-2 h-11 w-full rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none placeholder:text-[rgba(236,225,196,0.4)]"
+                    inputMode="decimal"
+                    onChange={(e) => setDailyPrizeOverride(e.target.value)}
+                    placeholder={`Deixe vazio para usar R$ ${(calculatedDailyPrize / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+                    step="0.01"
+                    type="number"
+                    value={dailyPrizeOverride}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+                    Nota (opcional)
+                  </span>
+                  <input
+                    className="mt-2 h-11 w-full rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none placeholder:text-[rgba(236,225,196,0.4)]"
+                    maxLength={240}
+                    onChange={(e) => setDailyPrizeOverrideNote(e.target.value)}
+                    placeholder="Ex: Jogador pagou valor diferente"
+                    value={dailyPrizeOverrideNote}
+                  />
+                </label>
+              </div>
+              {dailyPrizeOverride.trim() &&
+                Number.parseFloat(dailyPrizeOverride) !== calculatedDailyPrize / 100 && (
+                  <p className="mt-2 text-xs text-[rgba(255,184,143,0.96)]">
+                    Diferenca:{" "}
+                    {Number.parseFloat(dailyPrizeOverride) > calculatedDailyPrize / 100 ? "+" : ""}
+                    R${" "}
+                    {(
+                      Number.parseFloat(dailyPrizeOverride) -
+                      calculatedDailyPrize / 100
+                    ).toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                )}
+            </div>
+
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button
                 className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-5 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
-                onClick={() => setShowCloseStageConfirm(false)}
+                onClick={() => {
+                  setShowCloseStageConfirm(false);
+                  setDailyPrizeOverride("");
+                  setDailyPrizeOverrideNote("");
+                }}
                 type="button"
               >
                 Cancelar

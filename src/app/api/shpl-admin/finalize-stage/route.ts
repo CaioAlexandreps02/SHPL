@@ -93,6 +93,14 @@ export async function POST(request: Request) {
     const buyInAnnual = isFiniteNumber(payload.buyInAnnual) ? Math.max(payload.buyInAnnual, 0) : 0;
     const buyInDaily = isFiniteNumber(payload.buyInDaily) ? Math.max(payload.buyInDaily, 0) : 0;
 
+    const overrideDailyPrizeCents =
+      payload.overrideDailyPrizeCents != null && isFiniteNumber(payload.overrideDailyPrizeCents)
+        ? Math.max(payload.overrideDailyPrizeCents, 0)
+        : null;
+    const overrideDailyPrizeNote = isString(payload.overrideDailyPrizeNote)
+      ? payload.overrideDailyPrizeNote
+      : null;
+
     const actualStageStartedAt = isString(payload.actualStageStartedAt) ? payload.actualStageStartedAt : null;
 
     const result = await finalizeStage({
@@ -103,6 +111,8 @@ export async function POST(request: Request) {
       players,
       buyInAnnual,
       buyInDaily,
+      overrideDailyPrizeCents,
+      overrideDailyPrizeNote,
     });
 
     return NextResponse.json(result);
