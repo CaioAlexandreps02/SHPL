@@ -91,6 +91,8 @@ export function StageSetupScreen({
   const [annualContributionOverrideNote, setAnnualContributionOverrideNote] = useState("");
   const [includeTestInAnnual, setIncludeTestInAnnual] = useState(false);
   const [showLeaveStageConfirm, setShowLeaveStageConfirm] = useState(false);
+  const [showAgreementModal, setShowAgreementModal] = useState(false);
+  const [showMatchCloseConfirm, setShowMatchCloseConfirm] = useState(false);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [actionClockRemaining, setActionClockRemaining] = useState<number | null>(null);
   const [manualAdjustmentMatchIndex, setManualAdjustmentMatchIndex] = useState(0);
@@ -1307,9 +1309,6 @@ export function StageSetupScreen({
     const finalPosition = activePlayers.length;
     const pointsForThisExit = calculateMatchPoints(finalPosition);
 
-    let winnerId: string | null = null;
-    let winnerName: string | null = null;
-
     setPlayers((currentPlayers) => {
       const nextPlayers = currentPlayers.map((player) => {
         if (player.playerId !== selectedPlayer.playerId) {
@@ -1326,48 +1325,8 @@ export function StageSetupScreen({
         };
       });
 
-      const remainingPlayers = nextPlayers.filter(
-        (player) => !player.leftStage && !player.outOfCurrentMatch
-      );
-
-      if (remainingPlayers.length === 1) {
-        const detectedWinnerId = remainingPlayers[0].playerId;
-        winnerId = detectedWinnerId;
-        winnerName = remainingPlayers[0].playerName;
-        return nextPlayers.map((player) => {
-          if (player.playerId !== detectedWinnerId) {
-            return player;
-          }
-
-          const nextMatchPoints = [...player.matchPoints];
-          nextMatchPoints[currentMatchIndex] = calculateMatchPoints(1);
-
-          return {
-            ...player,
-            outOfCurrentMatch: true,
-            matchPoints: nextMatchPoints,
-          };
-        });
-      }
-
       return nextPlayers;
     });
-
-    if (winnerId && winnerName) {
-      closeCurrentMatchAsFinished(
-        `${winnerName} ficou sozinho na partida e assumiu automaticamente o 1o lugar.`
-      );
-      void appendStageLogEntries([
-        formatStageEventLogEntry(`${selectedPlayer.playerName} saiu da partida.`),
-        formatStageEventLogEntry(`${winnerName} ficou automaticamente em primeiro lugar.`),
-      ]);
-      if (!stageClosedAt) {
-        announceTableMessage(
-          `${selectedPlayer.playerName} saiu da partida. ${winnerName} ficou em primeiro lugar.`
-        );
-      }
-      return;
-    }
 
     setStageNotice(`${selectedPlayer.playerName} saiu da partida atual.`);
     void appendStageLogEntries([
@@ -1478,6 +1437,39 @@ export function StageSetupScreen({
     ]);
     announceTableMessage(`${selectedPlayer.playerName} saiu da etapa.`);
     setShowLeaveStageConfirm(false);
+  }
+
+  function handleManualCloseMatch(winnerId: string, winnerName: string) {
+    if (stageClosedAt || currentMatchClosed) {
+      return;
+    }
+
+    pushPlayerActionSnapshot();
+
+    setPlayers((currentPlayers) =>
+      currentPlayers.map((player) => {
+        if (player.playerId !== winnerId) {
+          return player;
+        }
+
+        const nextMatchPoints = [...player.matchPoints];
+        nextMatchPoints[currentMatchIndex] = calculateMatchPoints(1);
+
+        return {
+          ...player,
+          outOfCurrentMatch: true,
+          matchPoints: nextMatchPoints,
+        };
+      })
+    );
+
+    closeCurrentMatchAsFinished(
+      `${winnerName} venceu a partida por acordo/desistencia.`
+    );
+    void appendStageLogEntries([
+      formatStageEventLogEntry(`${winnerName} venceu a partida por fechamento manual.`),
+    ]);
+    announceTableMessage(`${winnerName} venceu a partida.`);
   }
 
   function handleManualPlacementChange(playerId: string, nextValue: string) {
@@ -2113,6 +2105,33 @@ export function StageSetupScreen({
                     </button>
                   </div>
 
+                  {canCloseCurrentMatch && activeMatchPlayers.length === 1 && (
+                    <div className="mt-4 rounded-[1.1rem] border border-[rgba(255,184,143,0.28)] bg-[rgba(255,166,84,0.08)] p-4">
+                      <p className="text-sm font-semibold text-[rgba(255,236,184,0.96)]">
+                        Partida pode ser finalizada
+                      </p>
+                      <p className="mt-1 text-xs text-[rgba(236,225,196,0.62)]">
+                        Resta {activeMatchPlayers.length} jogador ativo.
+                      </p>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <button
+                          className="h-10 rounded-[0.95rem] border border-[rgba(129,211,120,0.3)] bg-[rgba(129,211,120,0.12)] px-4 text-sm font-semibold text-[rgba(129,211,120,0.96)] transition hover:bg-[rgba(129,211,120,0.2)]"
+                          onClick={() => setShowMatchCloseConfirm(true)}
+                          type="button"
+                        >
+                          Fechar partida
+                        </button>
+                        <button
+                          className="h-10 rounded-[0.95rem] border border-[rgba(255,208,101,0.2)] bg-[rgba(255,208,101,0.08)] px-4 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,208,101,0.14)]"
+                          onClick={() => setShowAgreementModal(true)}
+                          type="button"
+                        >
+                          Acordo entre jogadores
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-4 rounded-[1.1rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(7,24,18,0.56)] p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-[rgba(236,225,196,0.48)]">
                       Legenda de cores
@@ -2502,6 +2521,61 @@ export function StageSetupScreen({
         </div>
       ) : null}
 
+      {showMatchCloseConfirm && activeMatchPlayers.length === 1 ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            className="absolute inset-0 bg-[rgba(0,0,0,0.56)]"
+            onClick={() => setShowMatchCloseConfirm(false)}
+            type="button"
+          />
+          <div className="relative z-10 w-full max-w-md rounded-[1.4rem] border border-[rgba(255,208,101,0.16)] bg-[linear-gradient(180deg,rgba(12,44,31,0.98),rgba(7,24,18,0.99))] p-5 shadow-[0_28px_60px_rgba(0,0,0,0.42)] md:p-6">
+            <p className="text-xs uppercase tracking-[0.22em] text-[rgba(236,225,196,0.48)]">
+              Fechar partida
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold text-[rgba(255,244,214,0.96)]">
+              {activeMatchPlayers[0]?.playerName ?? "Jogador"}
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-[rgba(236,225,196,0.72)]">
+              Confirme o fechamento da partida. O jogador restante sera premiado em 1o lugar automaticamente.
+            </p>
+
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-5 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
+                onClick={() => setShowMatchCloseConfirm(false)}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button
+                className="h-11 rounded-[0.95rem] border border-[rgba(129,211,120,0.3)] bg-[rgba(129,211,120,0.12)] px-5 text-sm font-semibold text-[rgba(129,211,120,0.96)] transition hover:bg-[rgba(129,211,120,0.2)]"
+                onClick={() => {
+                  const lastPlayer = activeMatchPlayers[0];
+                  if (lastPlayer) {
+                    handleManualCloseMatch(lastPlayer.playerId, lastPlayer.playerName);
+                  }
+                  setShowMatchCloseConfirm(false);
+                }}
+                type="button"
+              >
+                Confirmar fechamento
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showAgreementModal && activeMatchPlayers.length >= 2 ? (
+        <AgreementModal
+          activePlayers={activeMatchPlayers}
+          onClose={() => setShowAgreementModal(false)}
+          onConfirm={(winnerId, winnerName) => {
+            handleManualCloseMatch(winnerId, winnerName);
+            setShowAgreementModal(false);
+          }}
+        />
+      ) : null}
+
       {showCloseStageConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
@@ -2710,6 +2784,112 @@ function StageStatusChip({ label, value }: { label: string; value: string }) {
     <div className="rounded-full border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-4 py-2 text-sm text-[rgba(255,236,184,0.9)]">
       <span className="text-[rgba(236,225,196,0.58)]">{label}: </span>
       <span className="font-semibold text-[rgba(255,244,214,0.98)]">{value}</span>
+    </div>
+  );
+}
+
+function AgreementModal({
+  activePlayers,
+  onClose,
+  onConfirm,
+}: {
+  activePlayers: StagePlayerControl[];
+  onClose: () => void;
+  onConfirm: (winnerId: string, winnerName: string) => void;
+}) {
+  const [firstPlaceId, setFirstPlaceId] = useState<string>("");
+  const [secondPlaceId, setSecondPlaceId] = useState<string>("");
+
+  const availableForSecond = activePlayers.filter((p) => p.playerId !== firstPlaceId);
+
+  function handleConfirm() {
+    const firstPlayer = activePlayers.find((p) => p.playerId === firstPlaceId);
+    if (!firstPlayer) return;
+
+    const secondPlayer = activePlayers.find((p) => p.playerId === secondPlaceId);
+
+    onConfirm(firstPlayer.playerId, firstPlayer.playerName);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        className="absolute inset-0 bg-[rgba(0,0,0,0.56)]"
+        onClick={onClose}
+        type="button"
+      />
+      <div className="relative z-10 w-full max-w-md rounded-[1.4rem] border border-[rgba(255,208,101,0.16)] bg-[linear-gradient(180deg,rgba(12,44,31,0.98),rgba(7,24,18,0.99))] p-5 shadow-[0_28px_60px_rgba(0,0,0,0.42)] md:p-6">
+        <p className="text-xs uppercase tracking-[0.22em] text-[rgba(236,225,196,0.48)]">
+          Acordo entre jogadores
+        </p>
+        <h2 className="mt-3 text-2xl font-semibold text-[rgba(255,244,214,0.96)]">
+          Definir colocacoes
+        </h2>
+        <p className="mt-3 text-sm leading-6 text-[rgba(236,225,196,0.72)]">
+          Selecione quem ficou em cada colocacao e feche a partida.
+        </p>
+
+        <div className="mt-5 flex flex-col gap-4">
+          <label className="block">
+            <span className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+              1o lugar
+            </span>
+            <select
+              className="mt-2 h-11 w-full rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none"
+              onChange={(e) => {
+                setFirstPlaceId(e.target.value);
+                if (e.target.value === secondPlaceId) {
+                  setSecondPlaceId("");
+                }
+              }}
+              value={firstPlaceId}
+            >
+              <option value="">Selecione</option>
+              {activePlayers.map((player) => (
+                <option key={player.playerId} value={player.playerId}>
+                  {player.playerName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs uppercase tracking-[0.18em] text-[rgba(236,225,196,0.48)]">
+              2o lugar (opcional)
+            </span>
+            <select
+              className="mt-2 h-11 w-full rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none"
+              onChange={(e) => setSecondPlaceId(e.target.value)}
+              value={secondPlaceId}
+            >
+              <option value="">Nenhum</option>
+              {availableForSecond.map((player) => (
+                <option key={player.playerId} value={player.playerId}>
+                  {player.playerName}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-5 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
+            onClick={onClose}
+            type="button"
+          >
+            Cancelar
+          </button>
+          <button
+            className="h-11 rounded-[0.95rem] border border-[rgba(129,211,120,0.3)] bg-[rgba(129,211,120,0.12)] px-5 text-sm font-semibold text-[rgba(129,211,120,0.96)] transition hover:bg-[rgba(129,211,120,0.2)] disabled:opacity-40"
+            disabled={!firstPlaceId}
+            onClick={handleConfirm}
+            type="button"
+          >
+            Confirmar acordo
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
