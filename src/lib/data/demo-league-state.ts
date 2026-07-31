@@ -760,8 +760,8 @@ function toSnapshotStage(
 
 function compareRankingEntries(left: RankingEntry, right: RankingEntry) {
   return (
-    right.wins - left.wins ||
     right.points - left.points ||
+    right.wins - left.wins ||
     right.secondPlaces - left.secondPlaces ||
     right.thirdPlaces - left.thirdPlaces ||
     left.playerName.localeCompare(right.playerName, "pt-BR")

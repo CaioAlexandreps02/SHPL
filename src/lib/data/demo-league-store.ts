@@ -489,14 +489,18 @@ function calculateAnnualPoints(position: number, leftStage: boolean) {
   }
 
   if (position === 2) {
-    return 7;
+    return 8;
   }
 
   if (position === 3) {
-    return 5;
+    return 6;
   }
 
-  return 3;
+  if (position === 4) {
+    return 4;
+  }
+
+  return 2;
 }
 
 function buildFinalRanking(
