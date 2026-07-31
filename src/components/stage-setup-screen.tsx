@@ -774,6 +774,15 @@ export function StageSetupScreen({
     Boolean(selectedPlayer?.dailyPaid) &&
     !stageClosedAt &&
     !currentMatchClosed;
+  const canJoinCurrentMatch =
+    Boolean(selectedPlayer) &&
+    !selectedPlayer?.leftStage &&
+    Boolean(selectedPlayer?.outOfCurrentMatch) &&
+    Boolean(selectedPlayer?.annualPaid) &&
+    Boolean(selectedPlayer?.dailyPaid) &&
+    currentMatchStartedAt !== null &&
+    !currentMatchClosed &&
+    !stageClosedAt;
   const canCloseCurrentMatch =
     currentMatchStartedAt !== null &&
     !currentMatchClosed &&
@@ -1185,6 +1194,48 @@ export function StageSetupScreen({
       ]);
       announceTableMessage(`${playerName} deu buy-in anual e do dia.`);
     }
+  }
+
+  function handleJoinCurrentMatch() {
+    if (!canJoinCurrentMatch || !selectedPlayer) {
+      return;
+    }
+
+    const playerName = selectedPlayer.playerName;
+    pushPlayerActionSnapshot();
+
+    // Calcula o stack médio atual entre jogadores ativos
+    const activePlayersForAverage = players.filter(
+      (player) =>
+        player.annualPaid &&
+        player.dailyPaid &&
+        !player.leftStage &&
+        !player.outOfCurrentMatch
+    );
+    const totalChips = activePlayersForAverage.reduce(
+      (sum, player) => sum + Math.max(player.estimatedStack || 0, 0),
+      0
+    );
+    const suggestedStack =
+      activePlayersForAverage.length > 0
+        ? Math.round(totalChips / activePlayersForAverage.length)
+        : 3000;
+
+    updateSelectedPlayer((player) => ({
+      ...player,
+      outOfCurrentMatch: false,
+      estimatedStack: suggestedStack,
+    }));
+
+    setStageNotice(
+      `${playerName} entrou na partida atual com stack estimado de ${suggestedStack} fichas.`
+    );
+    void appendStageLogEntries([
+      formatStageEventLogEntry(
+        `${playerName} entrou na partida atual (chegou atrasado). Stack estimado: ${suggestedStack} fichas.`
+      ),
+    ]);
+    announceTableMessage(`${playerName} entrou na partida.`);
   }
 
   function handleEstimatedStackChange(playerId: string, value: string) {
@@ -1964,6 +2015,9 @@ export function StageSetupScreen({
                     <button className={compactActionButtonClassName} disabled={!canMarkSelectedPlayerOut} onClick={handlePlayerOutFromMatch} type="button">
                       Saiu da partida
                     </button>
+                    <button className={compactActionButtonClassName} disabled={!canJoinCurrentMatch} onClick={handleJoinCurrentMatch} type="button">
+                      Entrar na partida
+                    </button>
                     <button className={compactActionButtonClassName} disabled={playerActionHistory.length === 0} onClick={handleUndoLastAction} type="button">
                       Desfazer ultima acao
                     </button>
@@ -2357,6 +2411,10 @@ function LegendRow({
 function buildPlayerStatus(player: StagePlayerControl) {
   if (player.leftStage) {
     return "Saiu da etapa";
+  }
+
+  if (player.outOfCurrentMatch && player.dailyPaid) {
+    return "Aguardando entrar na partida";
   }
 
   if (player.outOfCurrentMatch) {

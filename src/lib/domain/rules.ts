@@ -136,6 +136,7 @@ function buildAvailableActions(
   if (!status?.paidDaily && status?.paidAnnual) actions.push("Buy-in do dia");
   if (!status?.paidDaily && !status?.paidAnnual) actions.push("Buy-in geral");
   if (status?.activeForStage && inCurrentMatch) actions.push("Eliminar da partida");
+  if (status?.activeForStage && !inCurrentMatch && !status?.leftStageEarly) actions.push("Entrar na partida");
   if (status?.activeForStage && !status?.leftStageEarly) actions.push("Saiu da etapa");
 
   return actions.length > 0 ? actions : ["Sem ação"];
