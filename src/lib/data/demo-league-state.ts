@@ -1119,3 +1119,36 @@ function mergeByKey<T>(
 
   return Array.from(map.values());
 }
+
+export type UpdateAnnualRankingInput = {
+  playerId: string;
+  points: number;
+  wins: number;
+  secondPlaces: number;
+  thirdPlaces: number;
+};
+
+export async function updateAnnualRankingStats(
+  updates: UpdateAnnualRankingInput[]
+): Promise<void> {
+  const state = await readState();
+  const updateMap = new Map(updates.map((u) => [u.playerId, u]));
+
+  const nextStats = state.annualRankingStats.map((entry) => {
+    const update = updateMap.get(entry.playerId);
+    if (!update) return entry;
+
+    return {
+      ...entry,
+      points: Math.max(update.points, 0),
+      wins: Math.max(update.wins, 0),
+      secondPlaces: Math.max(update.secondPlaces, 0),
+      thirdPlaces: Math.max(update.thirdPlaces, 0),
+    };
+  });
+
+  await writeState({
+    ...state,
+    annualRankingStats: nextStats,
+  });
+}

@@ -1,5 +1,35 @@
-import type { LeagueSnapshot } from "@/lib/domain/types";
+import { useCallback, useMemo, useState } from "react";
+
+import type { LeagueSnapshot, RankingEntry } from "@/lib/domain/types";
 import { PlayerAvatar } from "@/components/player-avatar";
+
+type EditableStats = {
+  points: number;
+  wins: number;
+  secondPlaces: number;
+  thirdPlaces: number;
+};
+
+function getEffectiveStats(
+  ranking: RankingEntry[],
+  playerId: string,
+  editedStats: Record<string, EditableStats>
+): EditableStats {
+  if (editedStats[playerId]) {
+    return editedStats[playerId];
+  }
+
+  const entry = ranking.find((e) => e.playerId === playerId);
+  return {
+    points: entry?.points ?? 0,
+    wins: entry?.wins ?? 0,
+    secondPlaces: entry?.secondPlaces ?? 0,
+    thirdPlaces: entry?.thirdPlaces ?? 0,
+  };
+}
+
+const inputClassName =
+  "h-8 w-full rounded-[0.65rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-2 text-center text-xs text-[rgba(255,244,214,0.96)] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 
 export function SHPLAnnualClassification({
   snapshot,
@@ -10,6 +40,67 @@ export function SHPLAnnualClassification({
   title?: string;
   description?: string;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedStats, setEditedStats] = useState<
+    Record<string, { points: number; wins: number; secondPlaces: number; thirdPlaces: number }>
+  >({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const hasChanges = Object.keys(editedStats).length > 0;
+
+  const handleStatChange = useCallback(
+    (playerId: string, field: "points" | "wins" | "secondPlaces" | "thirdPlaces", value: string) => {
+      const num = Number.parseInt(value, 10) || 0;
+      setEditedStats((prev) => ({
+        ...prev,
+        [playerId]: {
+          ...getEffectiveStats(snapshot.annualRanking, playerId, prev),
+          [field]: Math.max(num, 0),
+        },
+      }));
+    },
+    [snapshot.annualRanking]
+  );
+
+  const handleSave = useCallback(async () => {
+    const updates = Object.entries(editedStats).map(([playerId, stats]) => ({
+      playerId,
+      ...stats,
+    }));
+
+    setIsSaving(true);
+    setNotice(null);
+
+    try {
+      const response = await fetch("/api/shpl-admin/annual-ranking", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error ?? "Erro ao salvar");
+      }
+
+      setEditedStats({});
+      setIsEditing(false);
+      setNotice("Ranking atualizado com sucesso.");
+      window.location.reload();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Erro ao salvar");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [editedStats]);
+
+  const handleCancel = useCallback(() => {
+    setEditedStats({});
+    setIsEditing(false);
+    setNotice(null);
+  }, []);
+
   const nameColumnWidth = 250;
   const stageColumnWidth = 190;
   const totalColumnWidth = 160;
@@ -52,6 +143,43 @@ export function SHPLAnnualClassification({
           helper="temporada ativa"
         />
       </div>
+
+      <div className="mt-5 flex items-center justify-between">
+        <div className="flex-1" />
+        {isEditing ? (
+          <div className="flex gap-2">
+            <button
+              className="h-9 rounded-[0.85rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-4 text-xs font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
+              onClick={handleCancel}
+              type="button"
+            >
+              Cancelar
+            </button>
+            <button
+              className="h-9 rounded-[0.85rem] border border-[rgba(129,211,120,0.3)] bg-[rgba(129,211,120,0.12)] px-4 text-xs font-semibold text-[rgba(129,211,120,0.96)] transition hover:bg-[rgba(129,211,120,0.2)] disabled:opacity-40"
+              disabled={isSaving || !hasChanges}
+              onClick={handleSave}
+              type="button"
+            >
+              {isSaving ? "Salvando..." : "Salvar alteracoes"}
+            </button>
+          </div>
+        ) : (
+          <button
+            className="h-9 rounded-[0.85rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(255,255,255,0.03)] px-4 text-xs font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,255,255,0.05)]"
+            onClick={() => setIsEditing(true)}
+            type="button"
+          >
+            Editar ranking
+          </button>
+        )}
+      </div>
+
+      {notice ? (
+        <div className="mt-3 rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(255,183,32,0.08)] px-4 py-3 text-sm text-[rgba(255,236,184,0.92)]">
+          {notice}
+        </div>
+      ) : null}
 
       <div
         className="mt-5 max-w-full overflow-x-auto rounded-[1.35rem] border border-[rgba(255,208,101,0.12)]"
@@ -144,13 +272,77 @@ export function SHPLAnnualClassification({
                   </td>
                 ))}
                 <td
-                  className={`sticky right-0 z-10 border-b border-l border-[rgba(255,208,101,0.1)] px-4 py-3 text-center text-lg font-semibold text-[rgba(255,236,184,0.96)] ${
+                  className={`sticky right-0 z-10 border-b border-l border-[rgba(255,208,101,0.1)] px-3 py-2 text-center text-lg font-semibold text-[rgba(255,236,184,0.96)] ${
                     index % 2 === 0
                       ? "bg-[rgba(11,37,27,0.98)]"
                       : "bg-[rgba(8,28,20,0.99)]"
                   }`}
+                  style={{ minWidth: `${totalColumnWidth}px`, width: `${totalColumnWidth}px` }}
                 >
-                  {entry.points}
+                  {isEditing ? (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1">
+                        <span className="w-5 text-[0.6rem] uppercase tracking-wider text-[rgba(236,225,196,0.48)]">
+                          P
+                        </span>
+                        <input
+                          className={inputClassName}
+                          inputMode="numeric"
+                          onChange={(e) => handleStatChange(entry.playerId, "points", e.target.value)}
+                          type="number"
+                          value={getEffectiveStats(snapshot.annualRanking, entry.playerId, editedStats).points}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="w-5 text-[0.6rem] uppercase tracking-wider text-[rgba(236,225,196,0.48)]">
+                          V
+                        </span>
+                        <input
+                          className={inputClassName}
+                          inputMode="numeric"
+                          onChange={(e) => handleStatChange(entry.playerId, "wins", e.target.value)}
+                          type="number"
+                          value={getEffectiveStats(snapshot.annualRanking, entry.playerId, editedStats).wins}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="w-5 text-[0.6rem] uppercase tracking-wider text-[rgba(236,225,196,0.48)]">
+                          2
+                        </span>
+                        <input
+                          className={inputClassName}
+                          inputMode="numeric"
+                          onChange={(e) =>
+                            handleStatChange(entry.playerId, "secondPlaces", e.target.value)
+                          }
+                          type="number"
+                          value={
+                            getEffectiveStats(snapshot.annualRanking, entry.playerId, editedStats)
+                              .secondPlaces
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="w-5 text-[0.6rem] uppercase tracking-wider text-[rgba(236,225,196,0.48)]">
+                          3
+                        </span>
+                        <input
+                          className={inputClassName}
+                          inputMode="numeric"
+                          onChange={(e) =>
+                            handleStatChange(entry.playerId, "thirdPlaces", e.target.value)
+                          }
+                          type="number"
+                          value={
+                            getEffectiveStats(snapshot.annualRanking, entry.playerId, editedStats)
+                              .thirdPlaces
+                          }
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    entry.points
+                  )}
                 </td>
               </tr>
             ))}
