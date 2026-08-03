@@ -1,7 +1,7 @@
 # Auditoria de Persistencia — SHPL Poker App
 
 > Data: 03/08/2026
-> Status: 10 bugs corrigidos, 1 pendente (este documento)
+> Status: 11 bugs corrigidos, 0 pendentes (este documento)
 
 ---
 
@@ -17,7 +17,7 @@
 | 6 | `readLocalDocument` escrevia default em arquivo ausente | Alto | CORRIGIDO |
 | 7 | Race condition em mutations do admin store | Critico | CORRIGIDO |
 | 8 | Race condition em mutations do league state | Critico | CORRIGIDO |
-| 9 | Race condition em `appendServerTextDocument` | Alto | PENDENTE |
+| 9 | Race condition em `appendServerTextDocument` | Alto | CORRIGIDO |
 | 10 | IDs com `Date.now()` causam colisoes | Medio | CORRIGIDO |
 | 11 | `upsert: true` sem versionamento | Medio | N/A |
 | 12 | Sem `beforeunload` — dados perdidos ao fechar aba | Critico | CORRIGIDO |
@@ -259,6 +259,7 @@ Adicionar `version` ao tipo, incrementar a cada write, checar antes de escrever.
 
 **Arquivo:** `server-text-store.ts`
 **Severidade:** Alto
+**Status:** CORRIGIDO (commit 1d878db)
 
 **O que acontece:**
 ```typescript
