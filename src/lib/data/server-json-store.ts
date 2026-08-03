@@ -50,7 +50,7 @@ async function readRemoteDocument<T>(documentName: string, buildDefault: () => T
   const { data, error } = await supabase.storage.from(defaultBucketName).download(objectPath);
 
   if (error || !data) {
-    return buildDefault();
+    return readLocalDocument(documentName, buildDefault);
   }
 
   const raw = new TextDecoder("utf-8").decode(await data.arrayBuffer());

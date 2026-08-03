@@ -32,9 +32,7 @@ async function readLocalDocument(
     const raw = await readFile(filePath, "utf8");
     return stripBom(raw);
   } catch {
-    const defaultValue = await buildDefault();
-    await writeFile(filePath, defaultValue, "utf8");
-    return defaultValue;
+    return buildDefault();
   }
 }
 
@@ -58,9 +56,7 @@ async function readRemoteDocument(
   const { data, error } = await supabase.storage.from(defaultBucketName).download(objectPath);
 
   if (error || !data) {
-    const defaultValue = await buildDefault();
-    await writeRemoteDocument(documentName, defaultValue);
-    return defaultValue;
+    return readLocalDocument(documentName, buildDefault);
   }
 
   return stripBom(new TextDecoder("utf-8").decode(await data.arrayBuffer()));

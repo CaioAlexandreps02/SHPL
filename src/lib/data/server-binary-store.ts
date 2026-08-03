@@ -27,9 +27,7 @@ async function readLocalBinaryDocument(
   try {
     return await readFile(filePath);
   } catch {
-    const defaultValue = await buildDefault();
-    await writeFile(filePath, defaultValue);
-    return defaultValue;
+    return buildDefault();
   }
 }
 
@@ -54,9 +52,7 @@ async function readRemoteBinaryDocument(
   const { data, error } = await supabase.storage.from(defaultBucketName).download(objectPath);
 
   if (error || !data) {
-    const defaultValue = await buildDefault();
-    await writeRemoteBinaryDocument(documentName, defaultValue, contentType);
-    return defaultValue;
+    return readLocalBinaryDocument(documentName, buildDefault);
   }
 
   return Buffer.from(await data.arrayBuffer());

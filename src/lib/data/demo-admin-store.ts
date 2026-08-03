@@ -109,17 +109,7 @@ function normalizeStoredPlayer(player: StoredPlayerRecord) {
 async function readStore() {
   const parsed = await readServerJsonDocument(adminStoreDocumentName, buildDefaultAdminStore);
   const normalizedPlayers = parsed.players.map(normalizeStoredPlayer);
-  const didChangePlayers = JSON.stringify(normalizedPlayers) !== JSON.stringify(parsed.players);
   const normalizedStages = normalizeStoredStages(parsed.stages);
-  const didChangeStages = JSON.stringify(normalizedStages) !== JSON.stringify(parsed.stages);
-
-  if (didChangePlayers || didChangeStages) {
-    await writeServerJsonDocument(adminStoreDocumentName, {
-      ...parsed,
-      players: normalizedPlayers,
-      stages: normalizedStages,
-    });
-  }
 
   return {
     players: normalizedPlayers,
