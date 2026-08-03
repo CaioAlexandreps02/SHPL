@@ -1,7 +1,7 @@
 # Auditoria de Persistencia — SHPL Poker App
 
 > Data: 03/08/2026
-> Status: 6 bugs corrigidos, 4 pendentes (este documento)
+> Status: 10 bugs corrigidos, 1 pendente (este documento)
 
 ---
 
@@ -15,15 +15,15 @@
 | 4 | `readRemoteDocument` nao fazia fallback local quando Supabase falhava | Alto | CORRIGIDO |
 | 5 | Stores de texto/binario criavam defaults no read | Alto | CORRIGIDO |
 | 6 | `readLocalDocument` escrevia default em arquivo ausente | Alto | CORRIGIDO |
-| 7 | Race condition em mutations do admin store | Critico | PENDENTE |
-| 8 | Race condition em mutations do league state | Critico | PENDENTE |
+| 7 | Race condition em mutations do admin store | Critico | CORRIGIDO |
+| 8 | Race condition em mutations do league state | Critico | CORRIGIDO |
 | 9 | Race condition em `appendServerTextDocument` | Alto | PENDENTE |
-| 10 | IDs com `Date.now()` causam colisoes | Medio | PENDENTE |
-| 11 | `upsert: true` sem versionamento | Medio | PENDENTE |
-| 12 | Sem `beforeunload` — dados perdidos ao fechar aba | Critico | PENDENTE |
-| 13 | Sem retry no sync do runtime | Alto | PENDENTE |
-| 14 | Sem indicador visual de sync | Medio | PENDENTE |
-| 15 | `demo-league-store.ts` usa filesystem direto | Alto | PENDENTE |
+| 10 | IDs com `Date.now()` causam colisoes | Medio | CORRIGIDO |
+| 11 | `upsert: true` sem versionamento | Medio | N/A |
+| 12 | Sem `beforeunload` — dados perdidos ao fechar aba | Critico | CORRIGIDO |
+| 13 | Sem retry no sync do runtime | Alto | CORRIGIDO |
+| 14 | Sem indicador visual de sync | Medio | CORRIGIDO |
+| 15 | `demo-league-store.ts` usa filesystem direto | Alto | CORRIGIDO |
 
 ---
 
@@ -119,6 +119,7 @@ Quando o arquivo local nao existia, criava com dados mock. Se o JSON local estiv
 
 **Arquivo:** `demo-admin-store.ts`
 **Severidade:** Critico
+**Status:** CORRIGIDO (commit 8dc0724)
 
 **O que acontece:**
 Todas as mutacoes seguem o padrao read-modify-write sem protecao:
@@ -214,6 +215,7 @@ async function createStoredPlayer(input: { name: string }) {
 
 **Arquivo:** `demo-league-state.ts`
 **Severidade:** Critico
+**Status:** CORRIGIDO (commit 8dc0724)
 
 **O que acontece:**
 Mesmo padrao do Bug 7, mas nas funcoes de estado do campenato:
