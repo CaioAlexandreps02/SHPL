@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { createMockSnapshot } from "@/lib/data/mock";
 import {
   readServerJsonDocument,
@@ -37,10 +34,6 @@ const adminStoreDocumentName = "demo-admin-store.json";
 const DEFAULT_ADMIN_EMAIL = "caioporto100@gmail.com";
 const DEFAULT_ADMIN_NAME = "Caio Alexandre";
 const DEFAULT_STAGE_START_TIME = "20:00";
-const TEST_STAGE_ID = "stage-test-2026-04-20";
-const TEST_STAGE_DATE = "2026-04-20";
-const TEST_STAGE_TITLE = "Etapa Teste - Homologacao";
-const TEST_STAGE_START_TIME = "19:00";
 
 function buildDefaultAdminStore(): AdminStoreData {
   const snapshot = createMockSnapshot();
@@ -115,16 +108,14 @@ function normalizeStoredPlayer(player: StoredPlayerRecord) {
 
 async function readStore() {
   const parsed = await readServerJsonDocument(adminStoreDocumentName, buildDefaultAdminStore);
-  const bundledSeed = await readBundledAdminSeed();
-  const mergedStore = mergeAdminStores(parsed, bundledSeed);
-  const normalizedPlayers = mergedStore.players.map(normalizeStoredPlayer);
+  const normalizedPlayers = parsed.players.map(normalizeStoredPlayer);
   const didChangePlayers = JSON.stringify(normalizedPlayers) !== JSON.stringify(parsed.players);
-  const normalizedStages = normalizeStoredStages(mergedStore.stages);
+  const normalizedStages = normalizeStoredStages(parsed.stages);
   const didChangeStages = JSON.stringify(normalizedStages) !== JSON.stringify(parsed.stages);
 
   if (didChangePlayers || didChangeStages) {
     await writeServerJsonDocument(adminStoreDocumentName, {
-      ...mergedStore,
+      ...parsed,
       players: normalizedPlayers,
       stages: normalizedStages,
     });
@@ -291,66 +282,10 @@ function normalizeStoredStages(stages: StoredStageRecord[]) {
     isTest: Boolean(stage.isTest),
   }));
 
-  if (!normalized.some((stage) => stage.id === TEST_STAGE_ID)) {
-    normalized.push({
-      id: TEST_STAGE_ID,
-      title: TEST_STAGE_TITLE,
-      stageDate: TEST_STAGE_DATE,
-      status: "scheduled",
-      scheduledStartTime: TEST_STAGE_START_TIME,
-      isTest: true,
-    });
-  }
-
   return normalized.sort((left, right) => left.stageDate.localeCompare(right.stageDate));
 }
 
 function normalizeStageStartTime(value?: string) {
   const trimmed = value?.trim();
   return trimmed && /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : DEFAULT_STAGE_START_TIME;
-}
-
-async function readBundledAdminSeed(): Promise<AdminStoreData> {
-  const bundledPath = path.join(process.cwd(), "data", adminStoreDocumentName);
-
-  try {
-    const raw = await readFile(bundledPath, "utf8");
-    return JSON.parse(raw) as AdminStoreData;
-  } catch {
-    return buildDefaultAdminStore();
-  }
-}
-
-function mergeAdminStores(current: AdminStoreData, bundled: AdminStoreData): AdminStoreData {
-  const playerById = new Map(current.players.map((player) => [player.id, player]));
-
-  for (const bundledPlayer of bundled.players) {
-    const currentPlayer = playerById.get(bundledPlayer.id);
-    playerById.set(
-      bundledPlayer.id,
-      currentPlayer
-        ? {
-            ...currentPlayer,
-            ...bundledPlayer,
-            extraRoles: Array.from(
-              new Set([...(currentPlayer.extraRoles ?? []), ...(bundledPlayer.extraRoles ?? [])]),
-            ),
-          }
-        : bundledPlayer,
-    );
-  }
-
-  const stageById = new Map(current.stages.map((stage) => [stage.id, stage]));
-
-  for (const bundledStage of bundled.stages) {
-    stageById.set(bundledStage.id, {
-      ...(stageById.get(bundledStage.id) ?? {}),
-      ...bundledStage,
-    });
-  }
-
-  return {
-    players: Array.from(playerById.values()),
-    stages: Array.from(stageById.values()),
-  };
 }
