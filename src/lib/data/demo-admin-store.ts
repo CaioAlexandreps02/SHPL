@@ -147,7 +147,7 @@ export async function createStoredPlayer(input: {
   }
 
   const player: StoredPlayerRecord = {
-    id: `player-${Date.now()}`,
+    id: `player-${crypto.randomUUID()}`,
     fullName: normalizedName,
     nickname: normalizedName,
     active: true,

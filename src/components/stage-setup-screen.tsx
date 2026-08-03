@@ -96,6 +96,7 @@ export function StageSetupScreen({
   const [showAgreementModal, setShowAgreementModal] = useState(false);
   const [showMatchCloseConfirm, setShowMatchCloseConfirm] = useState(false);
   const [showBlindEditor, setShowBlindEditor] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"saved" | "saving" | "error">("saved");
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [actionClockRemaining, setActionClockRemaining] = useState<number | null>(null);
   const [manualAdjustmentMatchIndex, setManualAdjustmentMatchIndex] = useState(0);
@@ -421,45 +422,54 @@ export function StageSetupScreen({
 
     const timeoutId = window.setTimeout(async () => {
       runtimeSyncInFlightRef.current = true;
+      setSyncStatus("saving");
       const payloadWithTimestamp = buildStageRuntimePayload(new Date().toISOString());
-
-      try {
-        const response = await fetch("/api/shpl-admin/stage-session", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+      const body = JSON.stringify({
+        stage: {
+          id: stage.id,
+          title: stage.title,
+          stageDate: stage.stageDate,
+          scheduledStartTime: stage.scheduledStartTime,
+        },
+        runtime: payloadWithTimestamp,
+        session: {
+          modules: {
+            tableActive: true,
           },
-          body: JSON.stringify({
-            stage: {
-              id: stage.id,
-              title: stage.title,
-              stageDate: stage.stageDate,
-              scheduledStartTime: stage.scheduledStartTime,
-            },
-            runtime: payloadWithTimestamp,
-            session: {
-              modules: {
-                tableActive: true,
-              },
-            },
-          }),
-        });
+        },
+      });
 
-        if (response.ok) {
-          lastRuntimeSignatureRef.current = signature;
-          if (payloadWithTimestamp.updatedAt) {
-            lastSyncedAtRef.current = payloadWithTimestamp.updatedAt;
+      const maxRetries = 3;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch("/api/shpl-admin/stage-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+
+          if (response.ok) {
+            lastRuntimeSignatureRef.current = signature;
+            if (payloadWithTimestamp.updatedAt) {
+              lastSyncedAtRef.current = payloadWithTimestamp.updatedAt;
+            }
+            window.localStorage.setItem(
+              buildStageRuntimeStorageKey(stage.id),
+              JSON.stringify(payloadWithTimestamp),
+            );
+            setSyncStatus("saved");
+            break;
           }
-          window.localStorage.setItem(
-            buildStageRuntimeStorageKey(stage.id),
-            JSON.stringify(payloadWithTimestamp),
-          );
+        } catch {
+          // Retry com backoff exponencial
+          if (attempt < maxRetries - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+          }
         }
-      } catch {
-        // Mantem o estado local mesmo se a sincronizacao falhar.
-      } finally {
-        runtimeSyncInFlightRef.current = false;
       }
+
+      runtimeSyncInFlightRef.current = false;
+      setSyncStatus((prev) => (prev === "saving" ? "error" : prev));
     }, isRunning ? 900 : 250);
 
     return () => {
@@ -490,6 +500,35 @@ export function StageSetupScreen({
     stage.title,
     buildStageRuntimePayload,
   ]);
+
+  useEffect(() => {
+    function handleBeforeUnload() {
+      if (stageClosedAt) {
+        return;
+      }
+
+      try {
+        const runtimePayload = buildStageRuntimePayload(new Date().toISOString());
+        const body = JSON.stringify({
+          stage: {
+            id: stage.id,
+            title: stage.title,
+            stageDate: stage.stageDate,
+            scheduledStartTime: stage.scheduledStartTime,
+          },
+          runtime: runtimePayload,
+          session: { modules: { tableActive: true } },
+        });
+        const blob = new Blob([body], { type: "application/json" });
+        navigator.sendBeacon("/api/shpl-admin/stage-session", blob);
+      } catch {
+        // Ignora erros no beforeunload — nao ha nada mais que fazer.
+      }
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [buildStageRuntimePayload, stageClosedAt, stage.id, stage.scheduledStartTime, stage.stageDate, stage.title]);
 
   useEffect(() => {
     if (!runtimeHydratedRef.current) {
@@ -1810,6 +1849,12 @@ export function StageSetupScreen({
                 <p className="mt-3 text-sm leading-6 text-[rgba(236,225,196,0.72)]">
                   Painel operacional da {stage.title} para controle da mesa, cronometro de acao e acoes dos jogadores.
                 </p>
+                {syncStatus === "saving" && (
+                  <p className="mt-1 text-xs text-[rgba(236,225,196,0.45)]">Salvando...</p>
+                )}
+                {syncStatus === "error" && (
+                  <p className="mt-1 text-xs text-[rgba(255,132,92,0.8)]">Erro ao salvar — dados salvos localmente</p>
+                )}
               </div>
 
               <div className="inline-flex items-center gap-3 rounded-[0.95rem] border border-[rgba(255,208,101,0.18)] bg-[rgba(255,255,255,0.03)] px-4 py-2.5 text-sm font-semibold text-[rgba(255,236,184,0.96)]">

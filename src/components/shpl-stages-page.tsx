@@ -108,7 +108,7 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
     }
 
     const payloadToSave = {
-      id: draft.id ?? `stage-${Date.now()}`,
+      id: draft.id ?? `stage-${crypto.randomUUID()}`,
       title: draft.title.trim(),
       stageDate: draft.stageDate,
       scheduledStartTime: draft.scheduledStartTime,

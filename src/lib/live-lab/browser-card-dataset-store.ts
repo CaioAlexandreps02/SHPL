@@ -55,7 +55,7 @@ export async function saveCardSample(
   const db = await openCardDatasetDb();
   const record: SavedCardSampleRecord = {
     ...input,
-    id: input.id ?? `card-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    id: input.id ?? `card-${crypto.randomUUID()}`,
     createdAt: new Date().toISOString(),
   };
 

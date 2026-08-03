@@ -41,7 +41,7 @@ export async function saveSessionTranscript(input: Omit<SavedTranscriptSummary, 
   const db = await openTranscriptDb();
   const record: SavedTranscriptSummary = {
     ...input,
-    id: `session-${Date.now()}`,
+    id: `session-${crypto.randomUUID()}`,
     createdAt: new Date().toISOString(),
   };
 

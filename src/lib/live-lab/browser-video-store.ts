@@ -55,7 +55,7 @@ export async function saveHandClip(
   const db = await openVideoDb();
   const record: SavedHandClipRecord = {
     ...input,
-    id: input.id ?? `hand-${Date.now()}`,
+    id: input.id ?? `hand-${crypto.randomUUID()}`,
     createdAt: new Date().toISOString(),
   };
 

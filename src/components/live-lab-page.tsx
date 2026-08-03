@@ -700,7 +700,7 @@ export function LiveLabPage({
     const nextId =
       typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
-        : `live-device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        : `live-device-${crypto.randomUUID()}`;
 
     window.localStorage.setItem(INTEGRATED_DEVICE_ID_STORAGE_KEY, nextId);
     liveRemoteDeviceIdRef.current = nextId;
@@ -1317,7 +1317,7 @@ export function LiveLabPage({
         (transmission.recentTranscriptEntries ?? []).map((entry) => ({
           id:
             entry.id ??
-            `tx-stage-${entry.at ?? Date.now().toString()}-${Math.random().toString(36).slice(2, 8)}`,
+            `tx-stage-${entry.at ?? Date.now().toString()}-${crypto.randomUUID()}`,
           at: entry.at ?? new Date().toISOString(),
           text: entry.text ?? "",
           command: entry.command === "start" || entry.command === "end" || entry.command === "save"
@@ -3297,7 +3297,7 @@ export function LiveLabPage({
     if (shouldPersistLine || command !== "none") {
       setTranscriptFeed((current) => [
         {
-          id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: `tx-${crypto.randomUUID()}`,
           at: new Date().toISOString(),
           text: `${source === "browser" ? "[Navegador] " : "[Whisper] "}${cleanText || "(sem fala detectada)"}`,
           command,
@@ -3353,7 +3353,7 @@ export function LiveLabPage({
       ? `${linkedMatchLabel} · Mao ${handCounterRef.current}`
       : `Mao ${handCounterRef.current}`;
     const handSession: ActiveHandSession = {
-      id: `hand-${Date.now()}`,
+      id: `hand-${crypto.randomUUID()}`,
       title,
       startedAt: Date.now(),
       startTrigger: triggerText,
