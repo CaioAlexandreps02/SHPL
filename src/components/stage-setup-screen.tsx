@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 
 import { SHPLNavIcon } from "@/components/shpl-nav-icon";
+import { BlindEditorModal } from "@/components/blind-editor-modal";
 import type { AccessRole } from "@/lib/auth/roles";
 import {
   buildStagePointsSummary,
@@ -94,6 +95,7 @@ export function StageSetupScreen({
   const [showLeaveStageConfirm, setShowLeaveStageConfirm] = useState(false);
   const [showAgreementModal, setShowAgreementModal] = useState(false);
   const [showMatchCloseConfirm, setShowMatchCloseConfirm] = useState(false);
+  const [showBlindEditor, setShowBlindEditor] = useState(false);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
   const [actionClockRemaining, setActionClockRemaining] = useState<number | null>(null);
   const [manualAdjustmentMatchIndex, setManualAdjustmentMatchIndex] = useState(0);
@@ -1936,6 +1938,16 @@ export function StageSetupScreen({
                     Cronometro de acao
                   </button>
                 ) : null}
+                {isAdminUser ? (
+                  <button
+                    className="rounded-[0.95rem] border border-[rgba(255,208,101,0.28)] bg-[rgba(255,183,32,0.1)] px-4 py-3 text-sm font-semibold text-[rgba(255,236,184,0.96)] transition hover:bg-[rgba(255,183,32,0.16)] disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={stageClosedAt !== null}
+                    onClick={() => setShowBlindEditor(true)}
+                    type="button"
+                  >
+                    Editar Blinds
+                  </button>
+                ) : null}
               </div>
 
               <div className="mt-4 flex flex-col items-center justify-center gap-3 md:flex-row md:gap-6">
@@ -2573,6 +2585,18 @@ export function StageSetupScreen({
           onConfirm={(winnerId, winnerName) => {
             handleManualCloseMatch(winnerId, winnerName);
             setShowAgreementModal(false);
+          }}
+        />
+      ) : null}
+
+      {showBlindEditor ? (
+        <BlindEditorModal
+          blindLevels={blindLevels}
+          defaultBlindLevels={snapshot.blindStructure}
+          onClose={() => setShowBlindEditor(false)}
+          onSave={(updated) => {
+            setBlindLevels(updated);
+            setShowBlindEditor(false);
           }}
         />
       ) : null}
