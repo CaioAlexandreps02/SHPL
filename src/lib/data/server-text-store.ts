@@ -81,7 +81,7 @@ async function writeRemoteDocument(documentName: string, data: string) {
   }
 }
 
-export async function readServerTextDocument(
+async function readRawTextDocument(
   documentName: string,
   buildDefault: () => string | Promise<string>,
 ) {
@@ -92,6 +92,15 @@ export async function readServerTextDocument(
   return readLocalDocument(documentName, buildDefault);
 }
 
+export async function readServerTextDocument(
+  documentName: string,
+  buildDefault: () => string | Promise<string>,
+) {
+  const raw = await readRawTextDocument(documentName, buildDefault);
+  const { content } = extractVersionAndContent(raw);
+  return content;
+}
+
 export async function writeServerTextDocument(documentName: string, data: string) {
   if (hasSupabaseServiceRoleEnv) {
     return writeRemoteDocument(documentName, data);
@@ -100,13 +109,67 @@ export async function writeServerTextDocument(documentName: string, data: string
   return writeLocalDocument(documentName, data);
 }
 
+const versionPrefix = "[SHPL-LOG-VERSION:";
+const versionSuffix = "]\n";
+
+function extractVersionAndContent(raw: string): { version: number; content: string } {
+  if (!raw.startsWith(versionPrefix)) {
+    return { version: 0, content: raw };
+  }
+
+  const closingIndex = raw.indexOf(versionSuffix);
+  if (closingIndex === -1) {
+    return { version: 0, content: raw };
+  }
+
+  const versionStr = raw.slice(versionPrefix.length, closingIndex);
+  const version = Number.parseInt(versionStr, 10);
+
+  if (Number.isNaN(version)) {
+    return { version: 0, content: raw };
+  }
+
+  return {
+    version,
+    content: raw.slice(closingIndex + versionSuffix.length),
+  };
+}
+
+function wrapWithVersion(version: number, content: string): string {
+  return `${versionPrefix}${version}${versionSuffix}${content}`;
+}
+
 export async function appendServerTextDocument(
   documentName: string,
   fragment: string,
   buildDefault: () => string | Promise<string> = () => "",
 ) {
-  const currentValue = await readServerTextDocument(documentName, buildDefault);
-  const nextValue = `${currentValue}${fragment}`;
-  await writeServerTextDocument(documentName, nextValue);
-  return nextValue;
+  const maxRetries = 5;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const raw = await readRawTextDocument(documentName, buildDefault);
+    const { version: readVersion, content } = extractVersionAndContent(raw);
+    const nextContent = `${content}${fragment}`;
+    const nextRaw = wrapWithVersion(readVersion + 1, nextContent);
+
+    await writeServerTextDocument(documentName, nextRaw);
+
+    // Verify the write succeeded with correct version
+    const verifyRaw = await readRawTextDocument(documentName, () => nextRaw);
+    const { version: verifyVersion } = extractVersionAndContent(verifyRaw);
+
+    if (verifyVersion === readVersion + 1) {
+      return nextRaw;
+    }
+
+    // Version mismatch — another write happened, retry
+    if (attempt === maxRetries) {
+      throw new Error(
+        `Nao foi possivel gravar ${documentName} apos ${maxRetries + 1} tentativas ` +
+          `devido a concorrencia.`
+      );
+    }
+  }
+
+  throw new Error("Unexpected end of retry loop");
 }
