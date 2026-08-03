@@ -27,6 +27,7 @@ type StoredAnnualRankingStats = {
 };
 
 type DemoLeagueStateData = {
+  version: number;
   annualRankingStats: StoredAnnualRankingStats[];
   annualStagePoints: AnnualStagePoints[];
   stageMatchPoints: StageMatchPoints[];
@@ -75,6 +76,7 @@ function buildDefaultState(): DemoLeagueStateData {
   const snapshot = createMockSnapshot();
 
   return {
+    version: 0,
     annualRankingStats: snapshot.annualRanking.map((entry) => ({
       playerId: entry.playerId,
       points: entry.points,
@@ -94,11 +96,37 @@ function buildDefaultState(): DemoLeagueStateData {
 }
 
 async function readState() {
-  return readServerJsonDocument(stateDocumentName, buildDefaultState);
+  const raw = await readServerJsonDocument(stateDocumentName, buildDefaultState);
+  return {
+    ...raw,
+    version: typeof raw.version === "number" ? raw.version : 0,
+  };
 }
 
 async function writeState(data: DemoLeagueStateData) {
   await writeServerJsonDocument(stateDocumentName, data);
+}
+
+async function readStateVersion() {
+  const raw = await readServerJsonDocument(stateDocumentName, buildDefaultState);
+  return typeof raw.version === "number" ? raw.version : 0;
+}
+
+async function assertStateVersion(expectedVersion: number) {
+  const currentVersion = await readStateVersion();
+  if (currentVersion !== expectedVersion) {
+    throw new Error(
+      `Concorrencia detectada: o banco foi alterado por outra operacao. ` +
+        `Versao esperada: ${expectedVersion}, versao atual: ${currentVersion}. ` +
+        `Recarregue a pagina e tente novamente.`
+    );
+  }
+}
+
+async function incrementAndWriteState(data: DemoLeagueStateData) {
+  const nextData = { ...data, version: data.version + 1 };
+  await writeState(nextData);
+  return nextData;
 }
 
 export async function getDemoLeagueSnapshot(): Promise<LeagueSnapshot> {
@@ -215,6 +243,7 @@ export async function finalizeStage(input: FinalizeStageInput) {
     getStoredPlayers(),
     getStoredStages(),
   ]);
+  const readVersion = state.version;
   const stage = storedStages.find((entry) => entry.id === input.stageId);
 
   if (!stage) {
@@ -351,7 +380,8 @@ export async function finalizeStage(input: FinalizeStageInput) {
   };
 
   if (stage.isTest && !includeInAnnual) {
-    await writeState({
+    await assertStateVersion(readVersion);
+    await incrementAndWriteState({
       ...state,
       history: sortHistoryByDate([...state.history, historySummary], storedStages),
       stageHistoryDetails: sortStageHistoryByDate(
@@ -376,7 +406,8 @@ export async function finalizeStage(input: FinalizeStageInput) {
     };
   }
 
-  await writeState({
+  await assertStateVersion(readVersion);
+  await incrementAndWriteState({
     ...state,
     annualRankingStats: nextStats,
     annualStagePoints: sortAnnualStagePointsByDate(
@@ -472,6 +503,7 @@ export type UpdateAnnualPotOverrideInput = {
 
 export async function updateAnnualPotOverride(input: UpdateAnnualPotOverrideInput) {
   const state = await readState();
+  const readVersion = state.version;
   const nextState: DemoLeagueStateData = {
     ...state,
     manualAnnualPotCents:
@@ -481,7 +513,8 @@ export async function updateAnnualPotOverride(input: UpdateAnnualPotOverrideInpu
     manualAnnualPotNote: input.note?.trim() ? input.note.trim().slice(0, 240) : null,
     manualAnnualPotSetAt: input.manualCents === null ? null : new Date().toISOString(),
   };
-  await writeState(nextState);
+  await assertStateVersion(readVersion);
+  await incrementAndWriteState(nextState);
   return calculateAnnualPotBreakdown(nextState);
 }
 
@@ -491,6 +524,7 @@ export async function updateStageMatchPlacements(input: UpdateStageMatchPlacemen
     getStoredPlayers(),
     getStoredStages(),
   ]);
+  const readVersion = state.version;
   const stageRecord = state.stageMatchPoints.find((stage) => stage.stageId === input.stageId);
   const stageHistoryDetail = state.stageHistoryDetails.find((stage) => stage.stageId === input.stageId);
   const historySummary = state.history.find((stage) => stage.id === input.stageId);
@@ -638,7 +672,8 @@ export async function updateStageMatchPlacements(input: UpdateStageMatchPlacemen
     ? state.annualRankingStats
     : rebuildAnnualRankingStats(storedPlayers, updatedAnnualStagePoints, updatedStageHistoryDetails);
 
-  await writeState({
+  await assertStateVersion(readVersion);
+  await incrementAndWriteState({
     ...state,
     annualRankingStats: updatedAnnualRankingStats,
     annualStagePoints: updatedAnnualStagePoints,
@@ -1075,6 +1110,7 @@ export async function updateAnnualRankingStats(
   updates: UpdateAnnualRankingInput[]
 ): Promise<void> {
   const state = await readState();
+  const readVersion = state.version;
   const updateMap = new Map(updates.map((u) => [u.playerId, u]));
 
   const nextStats = state.annualRankingStats.map((entry) => {
@@ -1090,7 +1126,8 @@ export async function updateAnnualRankingStats(
     };
   });
 
-  await writeState({
+  await assertStateVersion(readVersion);
+  await incrementAndWriteState({
     ...state,
     annualRankingStats: nextStats,
   });

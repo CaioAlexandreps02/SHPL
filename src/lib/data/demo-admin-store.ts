@@ -26,6 +26,7 @@ export type StoredStageRecord = {
 };
 
 type AdminStoreData = {
+  version: number;
   players: StoredPlayerRecord[];
   stages: StoredStageRecord[];
 };
@@ -39,6 +40,7 @@ function buildDefaultAdminStore(): AdminStoreData {
   const snapshot = createMockSnapshot();
 
   return {
+    version: 0,
     players: snapshot.annualRanking.map((entry) => {
       const isDefaultAdmin = entry.playerName.trim().toLowerCase() === "caio";
 
@@ -112,6 +114,7 @@ async function readStore() {
   const normalizedStages = normalizeStoredStages(parsed.stages);
 
   return {
+    version: typeof parsed.version === "number" ? parsed.version : 0,
     players: normalizedPlayers,
     stages: normalizedStages,
   };
@@ -119,6 +122,30 @@ async function readStore() {
 
 async function writeStore(data: AdminStoreData) {
   await writeServerJsonDocument(adminStoreDocumentName, data);
+}
+
+async function readStoreWithVersion() {
+  const raw = await readServerJsonDocument(adminStoreDocumentName, buildDefaultAdminStore);
+  return {
+    version: typeof raw.version === "number" ? raw.version : 0,
+  };
+}
+
+async function assertStoreVersion(expectedVersion: number) {
+  const current = await readStoreWithVersion();
+  if (current.version !== expectedVersion) {
+    throw new Error(
+      `Concorrencia detectada: o banco foi alterado por outra operacao. ` +
+        `Versao esperada: ${expectedVersion}, versao atual: ${current.version}. ` +
+        `Recarregue a pagina e tente novamente.`
+    );
+  }
+}
+
+async function incrementAndWrite(data: AdminStoreData) {
+  const nextData = { ...data, version: data.version + 1 };
+  await writeStore(nextData);
+  return nextData;
 }
 
 export async function getStoredPlayers() {
@@ -130,6 +157,7 @@ export async function createStoredPlayer(input: {
   name: string;
 }) {
   const store = await readStore();
+  const readVersion = store.version;
   const normalizedName = input.name.trim();
 
   if (!normalizedName) {
@@ -158,12 +186,14 @@ export async function createStoredPlayer(input: {
   };
 
   store.players.push(player);
-  await writeStore(store);
+  await assertStoreVersion(readVersion);
+  await incrementAndWrite(store);
   return player;
 }
 
 export async function updateStoredPlayer(input: StoredPlayerRecord) {
   const store = await readStore();
+  const readVersion = store.version;
   const playerIndex = store.players.findIndex((player) => player.id === input.id);
 
   if (playerIndex < 0) {
@@ -176,14 +206,17 @@ export async function updateStoredPlayer(input: StoredPlayerRecord) {
     nickname: input.nickname.trim() || input.fullName.trim(),
   };
 
-  await writeStore(store);
+  await assertStoreVersion(readVersion);
+  await incrementAndWrite(store);
   return store.players[playerIndex];
 }
 
 export async function deleteStoredPlayer(playerId: string) {
   const store = await readStore();
+  const readVersion = store.version;
   store.players = store.players.filter((player) => player.id !== playerId);
-  await writeStore(store);
+  await assertStoreVersion(readVersion);
+  await incrementAndWrite(store);
 }
 
 export async function getStoredStages() {
@@ -193,6 +226,7 @@ export async function getStoredStages() {
 
 export async function saveStoredStage(input: StoredStageRecord) {
   const store = await readStore();
+  const readVersion = store.version;
   const nextStage = {
     ...input,
     title: input.title.trim(),
@@ -208,14 +242,17 @@ export async function saveStoredStage(input: StoredStageRecord) {
   }
 
   store.stages.sort((left, right) => left.stageDate.localeCompare(right.stageDate));
-  await writeStore(store);
+  await assertStoreVersion(readVersion);
+  await incrementAndWrite(store);
   return nextStage;
 }
 
 export async function deleteStoredStage(stageId: string) {
   const store = await readStore();
+  const readVersion = store.version;
   store.stages = store.stages.filter((stage) => stage.id !== stageId);
-  await writeStore(store);
+  await assertStoreVersion(readVersion);
+  await incrementAndWrite(store);
 }
 
 export async function resolveParticipantAccessByEmail(email: string) {
