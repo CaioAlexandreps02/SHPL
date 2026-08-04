@@ -87,6 +87,10 @@ export async function POST(request: Request) {
       players.push(parsed);
     }
 
+    const finalRankingPlayerIds = Array.isArray(payload.finalRankingPlayerIds)
+      ? payload.finalRankingPlayerIds.filter(isString)
+      : undefined;
+
     const completedMatchDurations = Array.isArray(payload.completedMatchDurations)
       ? payload.completedMatchDurations.filter(isFiniteNumber)
       : [];
@@ -134,6 +138,7 @@ export async function POST(request: Request) {
       closedAt: payload.closedAt,
       completedMatchDurations,
       players,
+      finalRankingPlayerIds,
       buyInAnnual,
       buyInDaily,
       overrideDailyPrizeCents,

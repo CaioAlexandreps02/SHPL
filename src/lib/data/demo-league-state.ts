@@ -55,6 +55,7 @@ export type FinalizeStageInput = {
   closedAt: string;
   completedMatchDurations: number[];
   players: FinalizeStagePlayerPayload[];
+  finalRankingPlayerIds?: string[];
   buyInAnnual: number;
   buyInDaily: number;
   overrideDailyPrizeCents?: number | null;
@@ -286,7 +287,7 @@ export async function finalizeStage(input: FinalizeStageInput) {
     })),
   };
 
-  const finalRanking = buildFinalRanking(input.players, playerNameById);
+  const finalRanking = buildFinalRanking(input.players, playerNameById, input.finalRankingPlayerIds);
   const annualStageRecord: AnnualStagePoints = {
     stageId: stage.id,
     stageTitle: stage.title,
@@ -834,9 +835,10 @@ function calculateAnnualPoints(position: number, leftStage: boolean, receivesAnn
 
 function buildFinalRanking(
   players: FinalizeStagePlayerPayload[],
-  playerNameById: Map<string, string>
+  playerNameById: Map<string, string>,
+  finalRankingPlayerIds: string[] = [],
 ) {
-  return [...players]
+  const computedRanking = [...players]
     .map((player) => ({
       playerId: player.playerId,
       playerName: playerNameById.get(player.playerId) ?? player.playerName,
@@ -868,6 +870,29 @@ function buildFinalRanking(
       ...player,
       position: index + 1,
     }));
+
+  if (finalRankingPlayerIds.length === 0) {
+    return computedRanking;
+  }
+
+  const rankingByPlayerId = new Map(computedRanking.map((player) => [player.playerId, player]));
+  const seenPlayerIds = new Set<string>();
+  const overriddenRanking = finalRankingPlayerIds
+    .map((playerId) => {
+      if (seenPlayerIds.has(playerId)) {
+        return null;
+      }
+
+      seenPlayerIds.add(playerId);
+      return rankingByPlayerId.get(playerId) ?? null;
+    })
+    .filter((player): player is (typeof computedRanking)[number] => Boolean(player));
+  const missingRanking = computedRanking.filter((player) => !seenPlayerIds.has(player.playerId));
+
+  return [...overriddenRanking, ...missingRanking].map((player, index) => ({
+    ...player,
+    position: index + 1,
+  }));
 }
 
 function buildFinalRankingFromStageMatchRecord(

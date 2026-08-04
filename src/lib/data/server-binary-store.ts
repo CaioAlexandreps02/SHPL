@@ -40,7 +40,6 @@ async function writeLocalBinaryDocument(documentName: string, data: Buffer) {
 async function readRemoteBinaryDocument(
   documentName: string,
   buildDefault: () => Promise<Buffer> | Buffer,
-  contentType: string,
 ) {
   const supabase = createServiceRoleSupabaseClient();
 
@@ -85,8 +84,10 @@ export async function readServerBinaryDocument(
   buildDefault: () => Promise<Buffer> | Buffer,
   contentType = "application/octet-stream",
 ) {
+  void contentType;
+
   if (hasSupabaseServiceRoleEnv) {
-    return readRemoteBinaryDocument(documentName, buildDefault, contentType);
+    return readRemoteBinaryDocument(documentName, buildDefault);
   }
 
   return readLocalBinaryDocument(documentName, buildDefault);

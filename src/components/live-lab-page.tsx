@@ -1941,11 +1941,14 @@ export function LiveLabPage({
     }
 
     const previousSeatMap = new Map(
-      previousContext.seatAssignments.map((seat) => [seat.seatIndex, seat.playerName ?? ""])
+      previousContext.seatAssignments.map((seat) => [
+        `${seat.tableIndex}:${seat.seatIndex}`,
+        seat.playerName ?? "",
+      ])
     );
 
     linkedStageContext.seatAssignments.forEach((seat) => {
-      const previousPlayerName = previousSeatMap.get(seat.seatIndex) ?? "";
+      const previousPlayerName = previousSeatMap.get(`${seat.tableIndex}:${seat.seatIndex}`) ?? "";
       const nextPlayerName = seat.playerName ?? "";
 
       if (previousPlayerName === nextPlayerName) {
@@ -1954,12 +1957,12 @@ export function LiveLabPage({
 
       if (nextPlayerName) {
         appendSessionTranscriptLine(
-          `Sistema: Lugar ${seat.seatIndex + 1} atualizado para ${nextPlayerName}`,
+          `Sistema: Mesa ${seat.tableIndex + 1}, lugar ${seat.seatIndex + 1} atualizado para ${nextPlayerName}`,
         );
         return;
       }
 
-      appendSessionTranscriptLine(`Sistema: Lugar ${seat.seatIndex + 1} ficou vazio`);
+      appendSessionTranscriptLine(`Sistema: Mesa ${seat.tableIndex + 1}, lugar ${seat.seatIndex + 1} ficou vazio`);
     });
   }, [integratedMode, linkedStageContext]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2862,7 +2865,9 @@ export function LiveLabPage({
             return;
           }
 
-          appendSessionTranscriptLine(`Sistema: Lugar ${seat.seatIndex + 1} ${seat.playerName}`);
+          appendSessionTranscriptLine(
+            `Sistema: Mesa ${seat.tableIndex + 1}, lugar ${seat.seatIndex + 1} ${seat.playerName}`,
+          );
         });
       }
 

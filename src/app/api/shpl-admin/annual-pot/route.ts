@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 
 import { getUserAccessFromCookieHeader, isAdmin } from "@/lib/auth/access";
 import {
-  calculateAnnualPotBreakdown,
   getAnnualPotBreakdown,
   updateAnnualPotOverride,
   type UpdateAnnualPotOverrideInput,

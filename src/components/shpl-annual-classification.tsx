@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { LeagueSnapshot, RankingEntry } from "@/lib/domain/types";
 import { PlayerAvatar } from "@/components/player-avatar";

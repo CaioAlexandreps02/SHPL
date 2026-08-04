@@ -4,15 +4,23 @@ import type { BlindLevel } from "@/lib/domain/types";
 import {
   buildStageRuntimeStorageKey,
   normalizeSeatAssignments,
+  normalizeStageRuntimeTables,
   normalizeStageRuntimePayload,
   type StoredStageRuntimePayload,
 } from "@/lib/live-lab/stage-runtime-shared";
 import { buildStageSessionStorageKey } from "@/lib/live-lab/stage-session-shared";
 
 export type LiveLinkedSeatAssignment = {
+  tableIndex: number;
   seatIndex: number;
   playerId: string | null;
   playerName: string | null;
+};
+
+export type LiveLinkedTable = {
+  tableIndex: number;
+  seatCount: number;
+  seatAssignments: LiveLinkedSeatAssignment[];
 };
 
 export type LiveLinkedStageOption = {
@@ -33,6 +41,7 @@ export type LiveLinkedStageContext = {
   matchElapsedSeconds: number;
   isRunning: boolean;
   currentMatchNumber: number;
+  tables: LiveLinkedTable[];
   seatAssignments: LiveLinkedSeatAssignment[];
   currentMatchClosed: boolean;
   stageClosed: boolean;
@@ -58,32 +67,7 @@ export function readLinkedStageContext(
       return null;
     }
 
-    const currentLevelIndex = Math.max(0, parsed.currentLevelIndex ?? 0);
-    const currentLevel = option.blindStructure[currentLevelIndex] ?? option.blindStructure[0] ?? null;
-    const normalizedSeats = normalizeSeatAssignments(parsed.seatAssignments ?? []).map(
-      (playerId, seatIndex) => ({
-        seatIndex,
-        playerId,
-        playerName: playerId ? option.playerNameById[playerId] ?? null : null,
-      }),
-    );
-    const completedMatchCount = parsed.completedMatchDurations?.length ?? 0;
-    const hasOpenMatch = Boolean(parsed.currentMatchStartedAt) && !parsed.currentMatchClosed;
-
-    return {
-      stageId: option.stageId,
-      stageTitle: option.stageTitle,
-      stageDateLabel: option.stageDateLabel,
-      currentLevelIndex,
-      currentBlindLabel: currentLevel ? buildBlindLabel(currentLevel) : null,
-      remainingSeconds: Math.max(parsed.remainingSeconds ?? 0, 0),
-      matchElapsedSeconds: Math.max(parsed.matchElapsedSeconds ?? 0, 0),
-      isRunning: Boolean(parsed.isRunning),
-      currentMatchNumber: Math.max(1, completedMatchCount + (hasOpenMatch ? 1 : 1)),
-      seatAssignments: normalizedSeats,
-      currentMatchClosed: parsed.currentMatchClosed ?? false,
-      stageClosed: Boolean(parsed.stageClosedAt),
-    };
+    return buildLinkedStageContext(option, parsed);
   } catch {
     return null;
   }
@@ -136,35 +120,56 @@ function readLinkedStageContextFromSerialized(option: LiveLinkedStageOption, raw
       return null;
     }
 
-    const currentLevelIndex = Math.max(0, parsed.currentLevelIndex ?? 0);
-    const currentLevel = option.blindStructure[currentLevelIndex] ?? option.blindStructure[0] ?? null;
-    const normalizedSeats = normalizeSeatAssignments(parsed.seatAssignments ?? []).map(
+    return buildLinkedStageContext(option, parsed);
+  } catch {
+    return null;
+  }
+}
+
+function buildLinkedStageContext(
+  option: LiveLinkedStageOption,
+  parsed: StoredStageRuntimePayload,
+): LiveLinkedStageContext {
+  const currentLevelIndex = Math.max(0, parsed.currentLevelIndex ?? 0);
+  const currentLevel = option.blindStructure[currentLevelIndex] ?? option.blindStructure[0] ?? null;
+  const tables = normalizeStageRuntimeTables(
+    parsed.tables,
+    parsed.seatAssignments ?? [],
+    parsed.tableSeatCount,
+  ).map((table, tableIndex) => {
+    const seatAssignments = normalizeSeatAssignments(table.seatAssignments, table.seatCount).map(
       (playerId, seatIndex) => ({
+        tableIndex,
         seatIndex,
         playerId,
         playerName: playerId ? option.playerNameById[playerId] ?? null : null,
       }),
     );
-    const completedMatchCount = parsed.completedMatchDurations?.length ?? 0;
-    const hasOpenMatch = Boolean(parsed.currentMatchStartedAt) && !parsed.currentMatchClosed;
 
     return {
-      stageId: option.stageId,
-      stageTitle: option.stageTitle,
-      stageDateLabel: option.stageDateLabel,
-      currentLevelIndex,
-      currentBlindLabel: currentLevel ? buildBlindLabel(currentLevel) : null,
-      remainingSeconds: Math.max(parsed.remainingSeconds ?? 0, 0),
-      matchElapsedSeconds: Math.max(parsed.matchElapsedSeconds ?? 0, 0),
-      isRunning: Boolean(parsed.isRunning),
-      currentMatchNumber: Math.max(1, completedMatchCount + (hasOpenMatch ? 1 : 1)),
-      seatAssignments: normalizedSeats,
-      currentMatchClosed: parsed.currentMatchClosed ?? false,
-      stageClosed: Boolean(parsed.stageClosedAt),
+      tableIndex,
+      seatCount: table.seatCount,
+      seatAssignments,
     };
-  } catch {
-    return null;
-  }
+  });
+  const completedMatchCount = parsed.completedMatchDurations?.length ?? 0;
+  const hasOpenMatch = Boolean(parsed.currentMatchStartedAt) && !parsed.currentMatchClosed;
+
+  return {
+    stageId: option.stageId,
+    stageTitle: option.stageTitle,
+    stageDateLabel: option.stageDateLabel,
+    currentLevelIndex,
+    currentBlindLabel: currentLevel ? buildBlindLabel(currentLevel) : null,
+    remainingSeconds: Math.max(parsed.remainingSeconds ?? 0, 0),
+    matchElapsedSeconds: Math.max(parsed.matchElapsedSeconds ?? 0, 0),
+    isRunning: Boolean(parsed.isRunning),
+    currentMatchNumber: Math.max(1, completedMatchCount + (hasOpenMatch ? 1 : 1)),
+    tables,
+    seatAssignments: tables.flatMap((table) => table.seatAssignments),
+    currentMatchClosed: parsed.currentMatchClosed ?? false,
+    stageClosed: Boolean(parsed.stageClosedAt),
+  };
 }
 
 function buildBlindLabel(level: BlindLevel) {
