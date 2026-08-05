@@ -9,6 +9,8 @@ import {
   updateStoredPlayer,
 } from "@/lib/data/demo-admin-store";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const players = await attachPlayerPhotos(await getStoredPlayers());
   return NextResponse.json({ players });
