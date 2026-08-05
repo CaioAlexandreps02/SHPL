@@ -926,7 +926,10 @@ export function StageSetupScreen({
   const canStartNextMatch =
     !stageClosedAt && currentMatchClosed && eligibleStagePlayers.length >= 2;
   const canCloseStage =
-    !stageClosedAt && completedMatchDurations.length > 0 && !isRunning && currentMatchClosed;
+    !stageClosedAt &&
+    completedMatchDurations.length > 0 &&
+    !isRunning &&
+    currentMatchStartedAt === null;
   const selectedTable = tables[selectedTableIndex] ?? tables[0];
   const selectedSeatAssignments = selectedTable?.seatAssignments ?? [];
   const selectedSeatPlayerId = selectedSeatAssignments[selectedSeatIndex] ?? "";
@@ -1364,13 +1367,19 @@ export function StageSetupScreen({
   }
 
   function handleTableSeatCountChange(tableIndex: number, nextCount: number) {
-    const currentSeatCount = tables[tableIndex]?.seatCount ?? LIVE_LAB_TOTAL_TABLE_SEATS;
+    const currentTable = tables[tableIndex];
+    const currentSeatCount = currentTable?.seatCount ?? LIVE_LAB_TOTAL_TABLE_SEATS;
 
-    if (nextCount <= currentSeatCount) {
+    if (nextCount === currentSeatCount) {
       return;
     }
 
     const normalizedNextCount = normalizeTableSeatCount(nextCount);
+    const vacatedPlayerNames = (currentTable?.seatAssignments ?? [])
+      .slice(normalizedNextCount)
+      .filter((playerId): playerId is string => Boolean(playerId))
+      .map((playerId) => players.find((player) => player.playerId === playerId)?.playerName ?? "Jogador indefinido");
+
     setTables((currentTables) =>
       currentTables.map((table, currentTableIndex) =>
         currentTableIndex === tableIndex
@@ -1382,10 +1391,18 @@ export function StageSetupScreen({
           : table,
       ),
     );
-    setStageNotice(`Numero de lugares da Mesa ${tableIndex + 1} aumentado para ${normalizedNextCount}.`);
+
+    const direction = normalizedNextCount > currentSeatCount ? "aumentado" : "reduzido";
+    setStageNotice(
+      vacatedPlayerNames.length > 0
+        ? `Numero de lugares da Mesa ${tableIndex + 1} ${direction} para ${normalizedNextCount}. ${vacatedPlayerNames.join(", ")} ficou(aram) sem lugar e precisa(m) ser reposicionado(s).`
+        : `Numero de lugares da Mesa ${tableIndex + 1} ${direction} para ${normalizedNextCount}.`,
+    );
     void appendStageLogEntries([
       formatStageEventLogEntry(
-        `Numero de lugares da Mesa ${tableIndex + 1} aumentado de ${currentSeatCount} para ${normalizedNextCount}.`,
+        `Numero de lugares da Mesa ${tableIndex + 1} ${direction} de ${currentSeatCount} para ${normalizedNextCount}.${
+          vacatedPlayerNames.length > 0 ? ` Removidos da mesa: ${vacatedPlayerNames.join(", ")}.` : ""
+        }`,
       ),
     ]);
   }
@@ -1859,6 +1876,15 @@ export function StageSetupScreen({
     }
 
     setMatchResultModalContext(null);
+
+    if (eligibleStagePlayers.length >= 2) {
+      if (!hasCompleteSeatAssignments) {
+        setSeatSetupIntent("start-next");
+        setShowSeatSetupModal(true);
+      } else {
+        performStartNextMatch();
+      }
+    }
   }
 
   const calculatedDailyPrize = useMemo(() => {
@@ -1919,7 +1945,7 @@ export function StageSetupScreen({
   function handleRequestCloseStage() {
     if (!canCloseStage) {
       setStageNotice(
-        "A etapa so pode ser encerrada depois de pelo menos uma partida finalizada e com a rodada atual fechada."
+        "A etapa so pode ser encerrada depois de pelo menos uma partida finalizada e com o cronometro parado (sem partida em andamento)."
       );
       return;
     }
@@ -2439,7 +2465,7 @@ export function StageSetupScreen({
                       Sair da etapa
                     </button>
                     <button className={compactActionButtonClassName} disabled={!canMarkSelectedPlayerOut} onClick={handlePlayerOutFromMatch} type="button">
-                      Saiu da partida
+                      Eliminado
                     </button>
                     <button className={compactActionButtonClassName} disabled={!canJoinCurrentMatch} onClick={handleJoinCurrentMatch} type="button">
                       Entrar na partida
@@ -2565,7 +2591,7 @@ export function StageSetupScreen({
             </div>
 
               <div className="mt-5 grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-              <div className={`grid gap-5 ${tables.length > 1 ? "2xl:grid-cols-2" : ""}`}>
+              <div className="grid gap-5">
                 {tables.map((table, tableIndex) => (
                   <div
                     key={`stage-table-${tableIndex + 1}`}
@@ -2592,7 +2618,6 @@ export function StageSetupScreen({
                         <div className="inline-flex overflow-hidden rounded-[0.85rem] border border-[rgba(255,208,101,0.18)]">
                           {LIVE_LAB_TABLE_SEAT_OPTIONS.map((option) => {
                             const isSelected = option === table.seatCount;
-                            const isLocked = option < table.seatCount;
 
                             return (
                               <button
@@ -2601,8 +2626,8 @@ export function StageSetupScreen({
                                   isSelected
                                     ? "bg-[rgba(255,183,32,0.18)] text-[rgba(255,236,184,0.98)]"
                                     : "text-[rgba(236,225,196,0.62)] hover:bg-[rgba(255,255,255,0.04)]"
-                                } ${isLocked ? "cursor-not-allowed opacity-40" : ""}`}
-                                disabled={isLocked || isSelected}
+                                }`}
+                                disabled={isSelected}
                                 onClick={() => handleTableSeatCountChange(tableIndex, option)}
                                 type="button"
                               >
