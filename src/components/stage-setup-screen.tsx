@@ -923,8 +923,6 @@ export function StageSetupScreen({
     eligibleStagePlayers.length > 0;
   const canStartCurrentMatch =
     !stageClosedAt && eligibleStagePlayers.length >= 2 && !currentMatchClosed;
-  const canStartNextMatch =
-    !stageClosedAt && currentMatchClosed && eligibleStagePlayers.length >= 2;
   const canCloseStage =
     !stageClosedAt &&
     completedMatchDurations.length > 0 &&
@@ -1190,32 +1188,6 @@ export function StageSetupScreen({
         formatStageEventLogEntry(`Partida ${currentMatchIndex + 1} encerrada manualmente com resultado confirmado.`),
       ],
     });
-  }
-
-  function handleStartNextMatch() {
-    if (stageClosedAt) {
-      setStageNotice("A etapa ja foi encerrada e nao aceita novas partidas.");
-      return;
-    }
-
-    if (!currentMatchClosed) {
-      setStageNotice("Encerre formalmente a partida atual antes de iniciar a proxima.");
-      return;
-    }
-
-    if (eligibleStagePlayers.length < 2) {
-      setStageNotice("Nao ha jogadores aptos suficientes para abrir uma nova partida.");
-      return;
-    }
-
-    if (!hasCompleteSeatAssignments) {
-      setStageNotice("Configure os lugares dos jogadores aptos para iniciar a proxima partida.");
-      setSeatSetupIntent("start-next");
-      setShowSeatSetupModal(true);
-      return;
-    }
-
-    performStartNextMatch();
   }
 
   function performStartCurrentMatch() {
@@ -2291,18 +2263,6 @@ export function StageSetupScreen({
                 </button>
                 <button className={timerButtonClassName} disabled={!canCloseCurrentMatch} onClick={handleCloseCurrentMatch} type="button">
                   ENCERRAR PARTIDA
-                </button>
-                <button
-                  className={`${timerButtonClassName} ${
-                    canStartNextMatch
-                      ? "border-[rgba(129,211,120,0.34)] bg-[linear-gradient(180deg,#b9f27a_0%,#5f9f24_100%)] text-[#112105] shadow-[0_12px_28px_rgba(129,211,120,0.26)]"
-                      : ""
-                  }`}
-                  disabled={!canStartNextMatch}
-                  onClick={handleStartNextMatch}
-                  type="button"
-                >
-                  INICIAR PROXIMA PARTIDA
                 </button>
                 {showActionClock ? (
                   <button
