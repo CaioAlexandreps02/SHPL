@@ -1413,7 +1413,26 @@ export function StageSetupScreen({
     }
 
     if (nextTableCount < tables.length) {
-      setStageNotice("Depois de adicionar a segunda mesa, a reducao para uma mesa fica bloqueada nesta etapa.");
+      const removedTable = tables[1];
+      const vacatedPlayerNames = (removedTable?.seatAssignments ?? [])
+        .filter((playerId): playerId is string => Boolean(playerId))
+        .map((playerId) => players.find((player) => player.playerId === playerId)?.playerName ?? "Jogador indefinido");
+
+      setTables((currentTables) => currentTables.slice(0, 1));
+      setSelectedTableIndex(0);
+      setSelectedSeatIndex(0);
+      setStageNotice(
+        vacatedPlayerNames.length > 0
+          ? `Mesa 2 removida. ${vacatedPlayerNames.join(", ")} ficou(aram) sem lugar e precisa(m) ser reposicionado(s) na Mesa 1.`
+          : "Mesa 2 removida.",
+      );
+      void appendStageLogEntries([
+        formatStageEventLogEntry(
+          `Mesa 2 removida, voltando para 1 mesa.${
+            vacatedPlayerNames.length > 0 ? ` Removidos da mesa: ${vacatedPlayerNames.join(", ")}.` : ""
+          }`,
+        ),
+      ]);
       return;
     }
 
@@ -2567,7 +2586,6 @@ export function StageSetupScreen({
                     {[1, 2].map((option) => {
                       const tableCount = option as 1 | 2;
                       const isSelected = tableCount === tables.length;
-                      const isLocked = tableCount < tables.length;
 
                       return (
                         <button
@@ -2576,8 +2594,8 @@ export function StageSetupScreen({
                             isSelected
                               ? "bg-[rgba(255,183,32,0.18)] text-[rgba(255,236,184,0.98)]"
                               : "text-[rgba(236,225,196,0.62)] hover:bg-[rgba(255,255,255,0.04)]"
-                          } ${isLocked ? "cursor-not-allowed opacity-40" : ""}`}
-                          disabled={isLocked || isSelected}
+                          }`}
+                          disabled={isSelected}
                           onClick={() => handleTableCountChange(tableCount)}
                           type="button"
                         >
