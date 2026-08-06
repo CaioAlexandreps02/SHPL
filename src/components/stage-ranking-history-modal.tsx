@@ -373,7 +373,7 @@ export function StageRankingHistoryModal({
               />
               <HistoryInfoCard
                 label="Campeao da etapa"
-                value={selectedStageHistoryDetail.winnerName}
+                value={stageRanking[0]?.playerName ?? selectedStageHistoryDetail.winnerName}
               />
             </div>
           </div>

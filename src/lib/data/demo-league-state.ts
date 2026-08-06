@@ -599,7 +599,11 @@ export async function updateStageMatchPlacements(input: UpdateStageMatchPlacemen
   const playerNameById = new Map(
     storedPlayers.map((player) => [player.id, player.nickname || player.fullName])
   );
-  const updatedFinalRanking = buildFinalRankingFromStageMatchRecord(updatedStageMatchRecord, playerNameById);
+  const updatedFinalRanking = buildFinalRankingFromStageMatchRecord(
+    updatedStageMatchRecord,
+    playerNameById,
+    stageHistoryDetail.finalRanking
+  );
   const updatedStageHistoryDetail: StageHistoryDetail = {
     ...stageHistoryDetail,
     winnerName: updatedFinalRanking[0]?.playerName ?? "-",
@@ -897,8 +901,13 @@ function buildFinalRanking(
 
 function buildFinalRankingFromStageMatchRecord(
   stageMatchRecord: StageMatchPoints,
-  playerNameById: Map<string, string>
+  playerNameById: Map<string, string>,
+  existingRanking?: Array<{ playerId: string; position: number }>
 ) {
+  const existingOrderMap = new Map(
+    (existingRanking ?? []).map((entry) => [entry.playerId, entry.position])
+  );
+
   return Array.from(
     new Set(stageMatchRecord.matches.flatMap((match) => Object.keys(match.pointsByPlayer)))
   )
@@ -929,6 +938,16 @@ function buildFinalRankingFromStageMatchRecord(
       if (right.thirdPlaces !== left.thirdPlaces) {
         return right.thirdPlaces - left.thirdPlaces;
       }
+
+      const leftExisting = existingOrderMap.get(left.playerId);
+      const rightExisting = existingOrderMap.get(right.playerId);
+
+      if (leftExisting !== undefined && rightExisting !== undefined) {
+        return leftExisting - rightExisting;
+      }
+
+      if (leftExisting !== undefined) return -1;
+      if (rightExisting !== undefined) return 1;
 
       return left.playerName.localeCompare(right.playerName, "pt-BR");
     })
