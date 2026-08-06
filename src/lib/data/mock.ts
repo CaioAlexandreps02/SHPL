@@ -149,13 +149,13 @@ const chipSet: ChipSetItem[] = [
 ];
 
 const annualRankingSeed = [
-  { playerId: "p2", playerName: "Alisson", points: 37, wins: 3, secondPlaces: 1, thirdPlaces: 0 },
-  { playerId: "p1", playerName: "Caio", points: 25, wins: 1, secondPlaces: 1, thirdPlaces: 1 },
-  { playerId: "p3", playerName: "Thomas", points: 15, wins: 0, secondPlaces: 1, thirdPlaces: 1 },
-  { playerId: "p4", playerName: "Tuba", points: 14, wins: 0, secondPlaces: 0, thirdPlaces: 2 },
-  { playerId: "p7", playerName: "Rhuan", points: 8, wins: 0, secondPlaces: 1, thirdPlaces: 0 },
-  { playerId: "p6", playerName: "Davi", points: 4, wins: 0, secondPlaces: 0, thirdPlaces: 0 },
-  { playerId: "p5", playerName: "Thiago", points: 3, wins: 0, secondPlaces: 0, thirdPlaces: 0 },
+  { playerId: "p2", playerName: "Alisson", points: 38, wins: 3, secondPlaces: 1, thirdPlaces: 0 },
+  { playerId: "p1", playerName: "Caio", points: 30, wins: 1, secondPlaces: 1, thirdPlaces: 1 },
+  { playerId: "p4", playerName: "Tuba", points: 20, wins: 0, secondPlaces: 0, thirdPlaces: 2 },
+  { playerId: "p3", playerName: "Thomas", points: 18, wins: 0, secondPlaces: 1, thirdPlaces: 1 },
+  { playerId: "p7", playerName: "Rhuan", points: 10, wins: 0, secondPlaces: 1, thirdPlaces: 0 },
+  { playerId: "p5", playerName: "Thiago", points: 4, wins: 0, secondPlaces: 0, thirdPlaces: 0 },
+  { playerId: "p6", playerName: "Davi", points: 2, wins: 0, secondPlaces: 0, thirdPlaces: 0 },
 ] as const;
 
 const annualStagePoints: AnnualStagePoints[] = [
@@ -166,12 +166,12 @@ const annualStagePoints: AnnualStagePoints[] = [
     stageDateShortLabel: "07/02",
     pointsByPlayer: {
       p2: 10,
-      p1: 3,
-      p3: 7,
-      p4: 5,
+      p3: 8,
+      p4: 6,
+      p1: 4,
+      p7: 2,
+      p6: 1,
       p5: 0,
-      p6: 3,
-      p7: 1,
     },
   },
   {
@@ -180,11 +180,11 @@ const annualStagePoints: AnnualStagePoints[] = [
     stageDateLabel: "14 de marco de 2026",
     stageDateShortLabel: "14/03",
     pointsByPlayer: {
-      p2: 7,
       p1: 10,
-      p3: 5,
-      p4: 1,
-      p5: 3,
+      p2: 8,
+      p3: 6,
+      p5: 4,
+      p4: 2,
       p6: 0,
       p7: 0,
     },
@@ -196,9 +196,9 @@ const annualStagePoints: AnnualStagePoints[] = [
     stageDateShortLabel: "05/04",
     pointsByPlayer: {
       p2: 10,
-      p1: 7,
-      p3: 3,
-      p4: 5,
+      p1: 8,
+      p4: 6,
+      p3: 4,
       p5: 0,
       p6: 0,
       p7: 0,
@@ -211,12 +211,12 @@ const annualStagePoints: AnnualStagePoints[] = [
     stageDateShortLabel: "12/04",
     pointsByPlayer: {
       p2: 10,
-      p1: 5,
-      p3: 0,
-      p4: 3,
+      p7: 8,
+      p4: 6,
+      p1: 4,
+      p6: 2,
       p5: 0,
-      p6: 1,
-      p7: 7,
+      p3: 0,
     },
   },
 ];

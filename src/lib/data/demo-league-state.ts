@@ -1157,3 +1157,114 @@ export async function updateAnnualRankingStats(
     annualRankingStats: nextStats,
   });
 }
+
+export type UpdateStageFinalRankingInput = {
+  stageId: string;
+  finalRankingPlayerIds: string[];
+};
+
+export async function updateStageFinalRanking(input: UpdateStageFinalRankingInput) {
+  const [state, storedPlayers, storedStages] = await Promise.all([
+    readState(),
+    getStoredPlayers(),
+    getStoredStages(),
+  ]);
+  const readVersion = state.version;
+  const stageHistoryDetail = state.stageHistoryDetails.find((stage) => stage.stageId === input.stageId);
+  const historySummary = state.history.find((stage) => stage.id === input.stageId);
+  const storedStage = storedStages.find((stage) => stage.id === input.stageId);
+
+  if (!stageHistoryDetail || !historySummary || !storedStage) {
+    throw new Error("Nao foi possivel localizar a etapa finalizada para edicao do ranking.");
+  }
+
+  const playerNameById = new Map(
+    storedPlayers.map((player) => [player.id, player.nickname || player.fullName])
+  );
+
+  const playerIdSet = new Set(input.finalRankingPlayerIds);
+  const existingRanking = stageHistoryDetail.finalRanking;
+
+  const reorderedRanking = input.finalRankingPlayerIds.map((playerId, index) => {
+    const existing = existingRanking.find((entry) => entry.playerId === playerId);
+    return {
+      playerId,
+      playerName: existing?.playerName ?? playerNameById.get(playerId) ?? "Jogador",
+      photoDataUrl: existing?.photoDataUrl,
+      position: index + 1,
+      totalPoints: existing?.totalPoints ?? 0,
+    };
+  });
+
+  const updatedStageHistoryDetail: StageHistoryDetail = {
+    ...stageHistoryDetail,
+    winnerName: reorderedRanking[0]?.playerName ?? "-",
+    finalRanking: reorderedRanking,
+  };
+
+  const updatedHistorySummary: HistoryStageSummary = {
+    ...historySummary,
+    winnerName: reorderedRanking[0]?.playerName ?? "-",
+  };
+
+  const updatedAnnualStagePoints = storedStage.isTest
+    ? state.annualStagePoints
+    : state.annualStagePoints.map((stage) => {
+        if (stage.stageId !== input.stageId) {
+          return stage;
+        }
+
+        const leftStagePlayers = new Set(
+          existingRanking
+            .filter((entry) => {
+              const stagePlayer = stageHistoryDetail.matches
+                .flatMap((m) => m.ranking)
+                .find((r) => r.playerId === entry.playerId);
+              return !stagePlayer;
+            })
+            .map((entry) => entry.playerId)
+        );
+
+        return {
+          ...stage,
+          pointsByPlayer: Object.fromEntries(
+            reorderedRanking.map((entry) => {
+              if (leftStagePlayers.has(entry.playerId)) {
+                return [entry.playerId, 1];
+              }
+              return [entry.playerId, calculateAnnualPoints(entry.position, false)];
+            })
+          ),
+        };
+      });
+
+  const updatedStageHistoryDetails = sortStageHistoryByDate(
+    state.stageHistoryDetails.map((stage) =>
+      stage.stageId === input.stageId ? updatedStageHistoryDetail : stage
+    ),
+    storedStages
+  );
+
+  const updatedHistory = sortHistoryByDate(
+    state.history.map((stage) => (stage.id === input.stageId ? updatedHistorySummary : stage)),
+    storedStages
+  );
+
+  const updatedAnnualRankingStats = storedStage.isTest
+    ? state.annualRankingStats
+    : rebuildAnnualRankingStats(storedPlayers, updatedAnnualStagePoints, updatedStageHistoryDetails);
+
+  await assertStateVersion(readVersion);
+  await incrementAndWriteState({
+    ...state,
+    annualRankingStats: updatedAnnualRankingStats,
+    annualStagePoints: updatedAnnualStagePoints,
+    history: updatedHistory,
+    stageHistoryDetails: updatedStageHistoryDetails,
+  });
+
+  return {
+    stageHistoryDetail: updatedStageHistoryDetail,
+    annualStagePoints: updatedAnnualStagePoints.find((s) => s.stageId === input.stageId),
+  };
+}

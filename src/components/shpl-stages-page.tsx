@@ -36,13 +36,14 @@ type StoredStagePayload = {
   isTest?: boolean;
 };
 
-export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
+export function SHPLStagesPage({ canEditStageRanking = false, snapshot }: { canEditStageRanking?: boolean; snapshot: LeagueSnapshot }) {
   const router = useRouter();
   const initialStages = useMemo(() => buildStageEntries(snapshot), [snapshot]);
   const [stages, setStages] = useState<StageListEntry[]>(initialStages);
   const [draft, setDraft] = useState<StageDraft | null>(null);
   const [message, setMessage] = useState("");
   const [selectedFinishedStageId, setSelectedFinishedStageId] = useState<string | null>(null);
+  const [stageToDelete, setStageToDelete] = useState<StageListEntry | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -167,6 +168,26 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
     setMessage("Etapa excluida com sucesso.");
   }
 
+  async function handleConfirmDeleteStage() {
+    if (!stageToDelete) return;
+
+    const response = await fetch("/api/shpl-admin/stages", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stageId: stageToDelete.id }),
+    });
+
+    if (!response.ok) {
+      setMessage("Nao foi possivel excluir a etapa.");
+      setStageToDelete(null);
+      return;
+    }
+
+    setStages((currentStages) => currentStages.filter((s) => s.id !== stageToDelete.id));
+    setStageToDelete(null);
+    setMessage("Etapa excluida com sucesso.");
+  }
+
   return (
     <section className="rounded-[1.8rem] border border-[rgba(255,208,101,0.16)] bg-[linear-gradient(180deg,rgba(12,44,31,0.92),rgba(7,24,18,0.98))] p-5 shadow-[0_20px_45px_rgba(0,0,0,0.28)] md:p-6">
       <div className="flex flex-col gap-4 border-b border-[rgba(255,208,101,0.1)] pb-5 md:flex-row md:items-start md:justify-between">
@@ -201,7 +222,7 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
         {stages.map((stage, index) => (
           <article
             key={stage.id}
-            className="grid cursor-pointer gap-4 rounded-[1.3rem] border border-[rgba(255,208,101,0.12)] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4 transition hover:border-[rgba(255,208,101,0.22)] hover:bg-[rgba(255,255,255,0.05)] md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-center"
+            className={`grid cursor-pointer gap-4 rounded-[1.3rem] border p-4 transition md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-center ${getStageCardClassName(stage.status)}`}
             onClick={() => handleOpenStage(stage)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
@@ -213,7 +234,7 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
             tabIndex={0}
           >
             <div className="flex min-w-0 items-center gap-4 text-left">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,#ffcf46_0%,#d8970a_100%)] text-base font-black text-[#2a1a00]">
+              <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-base font-black ${getStageBadgeClassName(stage.status)}`}>
                 {index + 1}
               </span>
 
@@ -261,6 +282,16 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
                 type="button"
               >
                 Editar etapa
+              </button>
+              <button
+                className="h-9 rounded-[0.85rem] border border-[rgba(255,107,107,0.2)] bg-[rgba(255,107,107,0.08)] px-4 text-xs font-semibold text-[rgba(255,154,154,0.96)] transition hover:bg-[rgba(255,107,107,0.14)]"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setStageToDelete(stage);
+                }}
+                type="button"
+              >
+                Excluir
               </button>
             </div>
           </article>
@@ -398,7 +429,43 @@ export function SHPLStagesPage({ snapshot }: { snapshot: LeagueSnapshot }) {
         </div>
       ) : null}
 
+      {stageToDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            aria-label="Fechar"
+            className="absolute inset-0 bg-[rgba(2,10,7,0.72)] backdrop-blur-[3px]"
+            onClick={() => setStageToDelete(null)}
+            type="button"
+          />
+          <div className="relative z-10 w-full max-w-md rounded-[1.45rem] border border-[rgba(255,107,107,0.2)] bg-[linear-gradient(180deg,rgba(44,18,18,0.98),rgba(30,12,12,0.99))] p-6 shadow-[0_28px_60px_rgba(0,0,0,0.42)]">
+            <h2 className="text-xl font-semibold text-[rgba(255,244,214,0.96)]">
+              Excluir etapa
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-[rgba(236,225,196,0.72)]">
+              Tem certeza que deseja excluir <strong className="text-[rgba(255,244,214,0.96)]">{stageToDelete.title}</strong> ({stageToDelete.stageDateShortLabel})? Essa acao nao pode ser desfeita.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] bg-[rgba(7,24,18,0.8)] px-5 text-sm font-semibold text-[rgba(255,244,214,0.8)] transition hover:bg-[rgba(255,255,255,0.05)]"
+                onClick={() => setStageToDelete(null)}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button
+                className="h-11 rounded-[0.95rem] border border-[rgba(255,107,107,0.28)] bg-[rgba(255,107,107,0.12)] px-5 text-sm font-semibold text-[rgba(255,198,182,0.96)] transition hover:bg-[rgba(255,107,107,0.18)]"
+                onClick={handleConfirmDeleteStage}
+                type="button"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <StageRankingHistoryModal
+        canEditStageRanking={canEditStageRanking}
         onClose={() => setSelectedFinishedStageId(null)}
         snapshot={snapshot}
         stageId={selectedFinishedStageId}
@@ -543,6 +610,30 @@ function getStageStatusClassName(status: StageStatus) {
   }
 
   return "border border-[rgba(151,196,255,0.16)] bg-[rgba(151,196,255,0.1)] text-[rgba(212,230,255,0.96)]";
+}
+
+function getStageCardClassName(status: StageStatus) {
+  if (status === "finished") {
+    return "border-[rgba(109,214,143,0.12)] bg-[linear-gradient(180deg,rgba(109,214,143,0.04),rgba(109,214,143,0.02))] opacity-60 hover:border-[rgba(109,214,143,0.22)] hover:bg-[rgba(109,214,143,0.06)] hover:opacity-80";
+  }
+
+  if (status === "active") {
+    return "border-[rgba(255,208,101,0.22)] bg-[linear-gradient(180deg,rgba(255,208,101,0.06),rgba(255,183,32,0.03))] hover:border-[rgba(255,208,101,0.32)] hover:bg-[rgba(255,208,101,0.08)]";
+  }
+
+  return "border-[rgba(255,208,101,0.12)] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] hover:border-[rgba(255,208,101,0.22)] hover:bg-[rgba(255,255,255,0.05)]";
+}
+
+function getStageBadgeClassName(status: StageStatus) {
+  if (status === "finished") {
+    return "bg-[linear-gradient(180deg,#6dd68f_0%,#3a9a5c_100%)] text-[#0a2a14]";
+  }
+
+  if (status === "active") {
+    return "bg-[linear-gradient(180deg,#ffd54e_0%,#e8a800_100%)] text-[#2a1a00] shadow-[0_0_12px_rgba(255,208,101,0.3)]";
+  }
+
+  return "bg-[linear-gradient(180deg,#ffcf46_0%,#d8970a_100%)] text-[#2a1a00]";
 }
 
 function Field({

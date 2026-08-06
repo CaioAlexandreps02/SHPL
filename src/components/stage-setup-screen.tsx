@@ -18,6 +18,7 @@ import {
   type StageResultPayload,
   type StageResultPlayer,
 } from "@/components/stage-result-modal";
+import { EditMatchResultsModal } from "@/components/edit-match-results-modal";
 import {
   LatePlayerModal,
   type LatePlayerSeatOption,
@@ -135,6 +136,7 @@ export function StageSetupScreen({
   const [showSeatSetupModal, setShowSeatSetupModal] = useState(false);
   const [seatSetupIntent, setSeatSetupIntent] = useState<SeatSetupIntent>("start-current");
   const [showBlindEditor, setShowBlindEditor] = useState(false);
+  const [showEditMatchResults, setShowEditMatchResults] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"saved" | "saving" | "error">("saved");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [stageNotice, setStageNotice] = useState<string | null>(null);
@@ -1878,11 +1880,43 @@ export function StageSetupScreen({
     }
   }
 
+  function handleEditMatchResultsConfirm(reorderedPlayerIdsByMatch: Record<number, string[]>) {
+    pushPlayerActionSnapshot();
+    requestImmediateRuntimeSync();
+
+    setPlayers((currentPlayers) => {
+      const nextPlayers = currentPlayers.map((player) => ({ ...player }));
+
+      Object.entries(reorderedPlayerIdsByMatch).forEach(([matchIndexStr, orderedIds]) => {
+        const matchIndex = Number(matchIndexStr);
+        const rankedCount = nextPlayers.filter((p) => p.annualPaid && p.dailyPaid).length;
+
+        orderedIds.forEach((playerId, position) => {
+          const player = nextPlayers.find((p) => p.playerId === playerId);
+          if (!player) return;
+
+          const nextMatchPoints = [...player.matchPoints];
+          if (position < rankedCount) {
+            nextMatchPoints[matchIndex] = calculateMatchPoints(position + 1);
+          } else {
+            nextMatchPoints[matchIndex] = 0;
+          }
+          player.matchPoints = nextMatchPoints;
+        });
+      });
+
+      return nextPlayers;
+    });
+
+    setShowEditMatchResults(false);
+    setStageNotice("Resultados das partidas atualizados com sucesso.");
+  }
+
   const calculatedDailyPrize = useMemo(() => {
     try {
       const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
       const parsed = rawSettings ? (JSON.parse(rawSettings) as { buyInDaily?: string }) : null;
-      const buyInDaily = Number.parseInt(parsed?.buyInDaily ?? "0", 10) || 0;
+      const buyInDaily = Number.parseInt(parsed?.buyInDaily ?? "10", 10) || 10;
       const dailyPaidCount = players.filter((p) => p.dailyPaid).length;
       return buyInDaily * dailyPaidCount;
     } catch {
@@ -1894,7 +1928,7 @@ export function StageSetupScreen({
     try {
       const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
       const parsed = rawSettings ? (JSON.parse(rawSettings) as { buyInAnnual?: string }) : null;
-      const buyInAnnual = Number.parseInt(parsed?.buyInAnnual ?? "0", 10) || 0;
+      const buyInAnnual = Number.parseInt(parsed?.buyInAnnual ?? "10", 10) || 10;
       const annualPaidCount = players.filter((p) => p.annualPaid).length;
       return buyInAnnual * annualPaidCount;
     } catch {
@@ -1984,8 +2018,8 @@ export function StageSetupScreen({
             receivesAnnualPoint: player.receivesAnnualPoint,
           })),
           finalRankingPlayerIds: confirmedStageRankingPlayerIds,
-          buyInAnnual: Number.parseInt(parsedSettings?.buyInAnnual ?? "0", 10) || 0,
-          buyInDaily: Number.parseInt(parsedSettings?.buyInDaily ?? "0", 10) || 0,
+          buyInAnnual: Number.parseInt(parsedSettings?.buyInAnnual ?? "10", 10) || 10,
+          buyInDaily: Number.parseInt(parsedSettings?.buyInDaily ?? "10", 10) || 10,
           overrideDailyPrizeCents: dailyPrizeOverride.trim()
             ? Math.round(Number.parseFloat(dailyPrizeOverride) * 100)
             : null,
@@ -2452,6 +2486,11 @@ export function StageSetupScreen({
                     <button className={compactActionButtonClassName} disabled={playerActionHistory.length === 0} onClick={handleUndoLastAction} type="button">
                       Desfazer ultima acao
                     </button>
+                    {currentMatchIndex > 0 ? (
+                      <button className={compactActionButtonClassName} onClick={() => setShowEditMatchResults(true)} type="button">
+                        Editar resultados
+                      </button>
+                    ) : null}
                   </div>
 
                   {canCloseCurrentMatch && activeMatchPlayers.length >= 1 && (
@@ -2903,11 +2942,13 @@ export function StageSetupScreen({
         <SeatSetupModal
           availableSeats={latePlayerAvailableSeats}
           canConfirm={hasCompleteSeatAssignments}
+          eligibleStagePlayers={eligibleStagePlayers}
           intent={seatSetupIntent}
           missingPlayers={missingSeatPlayers}
           onAssignSeat={handleSeatSetupAssignmentChange}
           onCancel={() => setShowSeatSetupModal(false)}
           onConfirm={handleConfirmSeatSetupAndStart}
+          tables={tables}
         />
       ) : null}
 
@@ -2959,6 +3000,31 @@ export function StageSetupScreen({
             setBlindLevels(updated);
             setShowBlindEditor(false);
           }}
+        />
+      ) : null}
+
+      {showEditMatchResults ? (
+        <EditMatchResultsModal
+          isOpen
+          matches={Array.from({ length: currentMatchIndex }, (_, matchIndex) => {
+            const duration = completedMatchDurations[matchIndex] ?? 0;
+            const matchPlayers = players
+              .filter((player) => player.annualPaid && player.dailyPaid)
+              .map((player) => ({
+                playerId: player.playerId,
+                playerName: player.playerName,
+                currentPoints: player.matchPoints[matchIndex] ?? 0,
+                hasParticipated: (player.matchPoints[matchIndex] ?? 0) > 0 || !player.outOfCurrentMatch,
+              }));
+            return {
+              matchIndex,
+              matchNumber: matchIndex + 1,
+              durationSeconds: duration,
+              players: matchPlayers,
+            };
+          })}
+          onCancel={() => setShowEditMatchResults(false)}
+          onConfirm={handleEditMatchResultsConfirm}
         />
       ) : null}
 
@@ -3284,21 +3350,53 @@ function AgreementModal({
 function SeatSetupModal({
   availableSeats,
   canConfirm,
+  eligibleStagePlayers,
   intent,
   missingPlayers,
   onAssignSeat,
   onCancel,
   onConfirm,
+  tables,
 }: {
   availableSeats: LatePlayerSeatOption[];
   canConfirm: boolean;
+  eligibleStagePlayers: StagePlayerControl[];
   intent: SeatSetupIntent;
   missingPlayers: StagePlayerControl[];
   onAssignSeat: (playerId: string, seatKey: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
+  tables: StageRuntimeTableState[];
 }) {
   const confirmLabel = intent === "start-next" ? "Iniciar proxima partida" : "Iniciar partida";
+  const [selectedSeat, setSelectedSeat] = useState<{ tableIndex: number; seatIndex: number } | null>(null);
+
+  const seatLabelsByPlayerId = useMemo(
+    () => Object.fromEntries(eligibleStagePlayers.map((player) => [player.playerId, player.playerName])),
+    [eligibleStagePlayers],
+  );
+
+  function handleSeatClick(tableIndex: number, seatIndex: number) {
+    const table = tables[tableIndex];
+    if (!table) return;
+
+    const assignment = table.seatAssignments[seatIndex];
+    if (assignment) {
+      // Seat already occupied — do nothing or could show info
+      return;
+    }
+
+    setSelectedSeat((prev) =>
+      prev?.tableIndex === tableIndex && prev.seatIndex === seatIndex ? null : { tableIndex, seatIndex },
+    );
+  }
+
+  function handleAssignPlayer(playerId: string) {
+    if (!selectedSeat) return;
+    const seatKey = `${selectedSeat.tableIndex}:${selectedSeat.seatIndex}`;
+    onAssignSeat(playerId, seatKey);
+    setSelectedSeat(null);
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -3309,7 +3407,7 @@ function SeatSetupModal({
         type="button"
       />
 
-      <div className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col rounded-[1.55rem] border border-[rgba(255,208,101,0.18)] bg-[linear-gradient(180deg,rgba(12,44,31,0.98),rgba(7,24,18,0.99))] p-5 shadow-[0_28px_60px_rgba(0,0,0,0.48)] md:p-6">
+      <div className="relative z-10 flex max-h-[92vh] w-full max-w-4xl flex-col rounded-[1.55rem] border border-[rgba(255,208,101,0.18)] bg-[linear-gradient(180deg,rgba(12,44,31,0.98),rgba(7,24,18,0.99))] p-5 shadow-[0_28px_60px_rgba(0,0,0,0.48)] md:p-6">
         <div className="border-b border-[rgba(255,208,101,0.1)] pb-5">
           <p className="text-xs uppercase tracking-[0.22em] text-[rgba(236,225,196,0.48)]">
             Configurar lugares
@@ -3318,40 +3416,55 @@ function SeatSetupModal({
             Defina os assentos antes de iniciar
           </h2>
           <p className="mt-3 text-sm leading-6 text-[rgba(236,225,196,0.72)]">
-            Escolha a mesa e o lugar de cada jogador apto. A partida so pode comecar depois que todos estiverem sentados.
+            Clique em um lugar vazio e selecione o jogador. A partida so pode comecar depois que todos estiverem sentados.
           </p>
         </div>
 
         <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
-          {missingPlayers.length > 0 ? (
-            <div className="grid gap-3">
-              {missingPlayers.map((player) => (
-                <label
-                  className="grid gap-2 rounded-[1.15rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] p-4"
-                  key={`seat-setup-${player.playerId}`}
-                >
-                  <span className="text-sm font-semibold text-[rgba(255,244,214,0.96)]">
-                    {player.playerName}
-                  </span>
-                  <select
-                    className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(7,24,18,0.8)] px-4 text-sm text-[rgba(255,244,214,0.96)] outline-none disabled:opacity-50"
-                    disabled={availableSeats.length === 0}
-                    onChange={(event) => onAssignSeat(player.playerId, event.target.value)}
-                    value=""
-                  >
-                    <option value="">Escolha mesa/lugar</option>
-                    {availableSeats.map((seat) => (
-                      <option key={`${player.playerId}-${buildSeatKey(seat)}`} value={buildSeatKey(seat)}>
-                        {seat.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
-            </div>
-          ) : (
+          {missingPlayers.length === 0 ? (
             <div className="rounded-[1.15rem] border border-[rgba(129,211,120,0.2)] bg-[rgba(129,211,120,0.08)] px-4 py-5 text-sm text-[rgba(222,255,221,0.94)]">
               Todos os jogadores aptos ja estao com lugar definido.
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {tables.map((table, tableIndex) => (
+                <div key={`seat-setup-table-${tableIndex}`}>
+                  <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[rgba(236,225,196,0.48)]">
+                    Mesa {tableIndex + 1}
+                  </p>
+                  <TableSeatMap
+                    highlightedSeatIndex={selectedSeat?.tableIndex === tableIndex ? selectedSeat.seatIndex : null}
+                    onSeatClick={(seatIndex) => handleSeatClick(tableIndex, seatIndex)}
+                    seatAssignments={table.seatAssignments}
+                    seatCount={table.seatCount}
+                    seatLabelsByPlayerId={seatLabelsByPlayerId}
+                  />
+                </div>
+              ))}
+
+              {selectedSeat ? (
+                <div className="rounded-[1.15rem] border border-[rgba(255,208,101,0.2)] bg-[rgba(255,255,255,0.04)] p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[rgba(236,225,196,0.48)]">
+                    Selecionar jogador para Mesa {selectedSeat.tableIndex + 1} - Lugar {selectedSeat.seatIndex + 1}
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {missingPlayers.map((player) => (
+                      <button
+                        key={`seat-setup-assign-${player.playerId}`}
+                        className="rounded-[0.95rem] border border-[rgba(255,208,101,0.16)] bg-[rgba(7,24,18,0.8)] px-4 py-3 text-left text-sm font-semibold text-[rgba(255,244,214,0.96)] transition hover:border-[rgba(255,208,101,0.36)] hover:bg-[rgba(255,208,101,0.08)]"
+                        onClick={() => handleAssignPlayer(player.playerId)}
+                        type="button"
+                      >
+                        {player.playerName}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : missingPlayers.length > 0 ? (
+                <div className="rounded-[1.15rem] border border-[rgba(255,208,101,0.12)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[rgba(236,225,196,0.72)]">
+                  Clique em um lugar vazio na mesa para selecionar o jogador.
+                </div>
+              ) : null}
             </div>
           )}
         </div>

@@ -1,7 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  type DragEndEvent,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import { PlayerAvatar } from "@/components/player-avatar";
 import { buildStagePointsSummary, compareStageRanking } from "@/lib/domain/rules";
@@ -24,6 +41,10 @@ export function StageRankingHistoryModal({
   const [manualPlacementDraft, setManualPlacementDraft] = useState<Record<string, string>>({});
   const [rankingNotice, setRankingNotice] = useState<string | null>(null);
   const [isSavingManualAdjustment, setIsSavingManualAdjustment] = useState(false);
+  const [showFinalRankingEditor, setShowFinalRankingEditor] = useState(false);
+  const [finalRankingOrder, setFinalRankingOrder] = useState<string[]>([]);
+  const [isSavingFinalRanking, setIsSavingFinalRanking] = useState(false);
+  const [finalRankingNotice, setFinalRankingNotice] = useState<string | null>(null);
 
   const selectedStageMatches = useMemo(
     () => snapshot.stageMatchPoints.find((stage) => stage.stageId === stageId) ?? null,
@@ -38,7 +59,15 @@ export function StageRankingHistoryModal({
     setShowManualEditor(false);
     setRankingNotice(null);
     setManualMatchNumber(selectedStageMatches?.matches[0]?.matchNumber ?? 1);
+    setShowFinalRankingEditor(false);
+    setFinalRankingNotice(null);
   }, [selectedStageMatches]);
+
+  useEffect(() => {
+    if (showFinalRankingEditor && selectedStageHistoryDetail) {
+      setFinalRankingOrder(selectedStageHistoryDetail.finalRanking.map((e) => e.playerId));
+    }
+  }, [showFinalRankingEditor, selectedStageHistoryDetail]);
 
   useEffect(() => {
     if (!selectedStageMatches) {
@@ -109,6 +138,51 @@ export function StageRankingHistoryModal({
         position: index + 1,
       }));
   }, [selectedStageMatches, snapshot.annualRanking]);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleFinalRankingDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setFinalRankingOrder((current) => {
+      const oldIndex = current.indexOf(active.id as string);
+      const newIndex = current.indexOf(over.id as string);
+      if (oldIndex < 0 || newIndex < 0) return current;
+      return arrayMove(current, oldIndex, newIndex);
+    });
+  }
+
+  async function handleSaveFinalRanking() {
+    if (!stageId || finalRankingOrder.length === 0) return;
+
+    setIsSavingFinalRanking(true);
+    setFinalRankingNotice(null);
+
+    try {
+      const response = await fetch("/api/shpl-admin/stage-final-ranking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId, finalRankingPlayerIds: finalRankingOrder }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error ?? "Erro ao salvar ranking.");
+      }
+
+      setFinalRankingNotice("Ranking final atualizado com sucesso.");
+      setShowFinalRankingEditor(false);
+      window.location.reload();
+    } catch (error) {
+      setFinalRankingNotice(error instanceof Error ? error.message : "Erro ao salvar ranking.");
+    } finally {
+      setIsSavingFinalRanking(false);
+    }
+  }
 
   function handleManualPlacementChange(playerId: string, nextValue: string) {
     setManualPlacementDraft((currentDraft) => ({
@@ -234,13 +308,34 @@ export function StageRankingHistoryModal({
 
           <div className="flex items-center gap-3">
             {canEditStageRanking ? (
-              <button
-                className="rounded-[0.95rem] border border-[rgba(129,196,255,0.22)] bg-[rgba(129,196,255,0.12)] px-4 py-2 text-sm font-semibold text-[rgba(220,239,255,0.96)] transition hover:bg-[rgba(129,196,255,0.18)]"
-                onClick={() => setShowManualEditor((currentValue) => !currentValue)}
-                type="button"
-              >
-                {showManualEditor ? "Fechar ajuste manual" : "Ajustar manualmente"}
-              </button>
+              <>
+                <button
+                  className="rounded-[0.95rem] border border-[rgba(129,196,255,0.22)] bg-[rgba(129,196,255,0.12)] px-4 py-2 text-sm font-semibold text-[rgba(220,239,255,0.96)] transition hover:bg-[rgba(129,196,255,0.18)]"
+                  onClick={() => {
+                    setShowFinalRankingEditor((v) => !v);
+                    if (!showFinalRankingEditor) {
+                      setShowManualEditor(false);
+                      setFinalRankingNotice(null);
+                    }
+                  }}
+                  type="button"
+                >
+                  {showFinalRankingEditor ? "Fechar reordenacao" : "Reordenar ranking"}
+                </button>
+                <button
+                  className="rounded-[0.95rem] border border-[rgba(255,183,32,0.22)] bg-[rgba(255,183,32,0.12)] px-4 py-2 text-sm font-semibold text-[rgba(255,220,143,0.96)] transition hover:bg-[rgba(255,183,32,0.18)]"
+                  onClick={() => {
+                    setShowManualEditor((v) => !v);
+                    if (!showManualEditor) {
+                      setShowFinalRankingEditor(false);
+                      setRankingNotice(null);
+                    }
+                  }}
+                  type="button"
+                >
+                  {showManualEditor ? "Fechar ajuste manual" : "Ajustar partida"}
+                </button>
+              </>
             ) : null}
 
             <button
@@ -366,6 +461,68 @@ export function StageRankingHistoryModal({
                     </label>
                   ))}
                 </div>
+              </div>
+            </div>
+          ) : null}
+
+          {showFinalRankingEditor && canEditStageRanking ? (
+            <div className="border-b border-[rgba(255,183,32,0.12)] bg-[rgba(255,183,32,0.06)] px-5 py-5 md:px-6">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-[rgba(255,220,143,0.56)]">
+                  Correcao administrativa
+                </p>
+                <h4 className="mt-2 text-lg font-semibold text-[rgba(255,220,143,0.98)]">
+                  Reordenar ranking final da etapa
+                </h4>
+                <p className="mt-2 text-sm leading-6 text-[rgba(255,220,143,0.76)]">
+                  Arraste os jogadores para reordenar. A pontuacao anual sera recalculada automaticamente.
+                </p>
+              </div>
+
+              <div className="mt-4">
+                <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleFinalRankingDragEnd}>
+                  <SortableContext items={finalRankingOrder} strategy={verticalListSortingStrategy}>
+                    <div className="grid gap-2">
+                      {finalRankingOrder.map((playerId, index) => {
+                        const entry = selectedStageHistoryDetail.finalRanking.find((e) => e.playerId === playerId);
+                        if (!entry) return null;
+                        return (
+                          <FinalRankingDragItem
+                            key={playerId}
+                            playerId={playerId}
+                            playerName={entry.playerName}
+                            position={index + 1}
+                            totalPoints={entry.totalPoints}
+                          />
+                        );
+                      })}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              </div>
+
+              {finalRankingNotice ? (
+                <div className="mt-3 rounded-[0.95rem] border border-[rgba(255,183,32,0.14)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[rgba(255,220,143,0.92)]">
+                  {finalRankingNotice}
+                </div>
+              ) : null}
+
+              <div className="mt-4 flex gap-3">
+                <button
+                  className="h-11 rounded-[0.95rem] border border-[rgba(255,208,101,0.14)] px-5 text-sm font-semibold text-[rgba(236,225,196,0.72)] transition hover:bg-[rgba(255,255,255,0.04)]"
+                  onClick={() => setShowFinalRankingEditor(false)}
+                  type="button"
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="h-11 rounded-[0.95rem] border border-[rgba(129,211,120,0.28)] bg-[rgba(129,211,120,0.16)] px-5 text-sm font-semibold text-[rgba(222,255,221,0.96)] transition hover:bg-[rgba(129,211,120,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={isSavingFinalRanking}
+                  onClick={handleSaveFinalRanking}
+                  type="button"
+                >
+                  {isSavingFinalRanking ? "Salvando..." : "Salvar ranking"}
+                </button>
               </div>
             </div>
           ) : null}
@@ -618,4 +775,60 @@ function buildManualDraftForMatch(
 
 function buildPlacementLabel(placement: number) {
   return `${placement}o lugar`;
+}
+
+function FinalRankingDragItem({
+  playerId,
+  playerName,
+  position,
+  totalPoints,
+}: {
+  playerId: string;
+  playerName: string;
+  position: number;
+  totalPoints: number;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: playerId,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex items-center gap-3 rounded-[1rem] border px-3 py-2.5 transition ${
+        isDragging
+          ? "z-20 scale-[1.01] border-[rgba(255,208,101,0.38)] bg-[rgba(255,183,32,0.16)]"
+          : "border-[rgba(255,183,32,0.18)] bg-[rgba(7,24,18,0.72)]"
+      }`}
+      style={style}
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        aria-label={`Arrastar ${playerName}`}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.8rem] border border-[rgba(255,183,32,0.14)] bg-[rgba(255,255,255,0.03)] text-lg text-[rgba(255,220,143,0.72)] transition hover:bg-[rgba(255,255,255,0.06)]"
+        type="button"
+      >
+        &#x2801;&#x2801;
+      </button>
+
+      <span className="flex h-9 min-w-9 items-center justify-center rounded-[0.8rem] border border-[rgba(255,183,32,0.18)] bg-[rgba(255,183,32,0.1)] px-3 text-sm font-black text-[rgba(255,220,143,0.96)]">
+        {position}º
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-[rgba(255,244,214,0.96)]">
+          {playerName}
+        </p>
+      </div>
+
+      <span className="rounded-full bg-[rgba(255,183,32,0.14)] px-2.5 py-0.5 text-[0.72rem] font-semibold text-[rgba(255,220,143,0.96)]">
+        {totalPoints} pts
+      </span>
+    </div>
+  );
 }

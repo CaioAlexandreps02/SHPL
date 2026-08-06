@@ -35,12 +35,12 @@ function readFinancialMetrics(stageId: string | undefined): FinancialMetrics {
     return EMPTY_METRICS;
   }
 
-  let buyInDaily = 0;
+  let buyInDaily = 10;
   try {
     const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (rawSettings) {
       const parsed = JSON.parse(rawSettings) as { buyInDaily?: string };
-      buyInDaily = Number.parseInt(parsed.buyInDaily ?? "0", 10) || 0;
+      buyInDaily = Number.parseInt(parsed.buyInDaily ?? "10", 10) || 10;
     }
   } catch {
     return { buyInDaily, dailyPaidPlayers: 0, annualPaidPlayers: 0 };
